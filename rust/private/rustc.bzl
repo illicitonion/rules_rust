@@ -348,6 +348,13 @@ def rustc_compile_action(
     else:
         formatted_version = ""
 
+    # Make bin crate data deps available to tests.
+    for data in getattr(ctx.attr, "data", []):
+        if CrateInfo in data:
+            dep_crate_info = data[CrateInfo]
+            if dep_crate_info.type == "bin":
+                env["CARGO_BIN_EXE_" + dep_crate_info.output.basename] = dep_crate_info.output.short_path
+
     # Update environment with user provided variables.
     env.update(crate_info.rustc_env)
 
