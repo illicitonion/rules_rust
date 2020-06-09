@@ -43,7 +43,6 @@ load(
 )
 load("@io_bazel_rules_rust//rust:private/rustc.bzl", "CrateInfo", "rustc_compile_action")
 load("@io_bazel_rules_rust//rust:private/utils.bzl", "find_toolchain")
-load("@io_bazel_rules_rust//rust:private/transitions.bzl", "proc_macro_host_transition")
 
 RustProtoProvider = provider(
     fields = {
@@ -227,11 +226,7 @@ rust_proto_library = rule(
                 "@io_bazel_rules_rust//proto:optional_output_wrapper",
             ),
         ),
-        "_whitelist_function_transition": attr.label(
-            default = "//tools/whitelists/function_transition_whitelist",
-        ),
     },
-    cfg = proc_macro_host_transition,
     fragments = ["cpp"],
     host_fragments = ["cpp"],
     toolchains = [
@@ -291,11 +286,7 @@ rust_grpc_library = rule(
                 "@io_bazel_rules_rust//proto:optional_output_wrapper",
             ),
         ),
-        "_whitelist_function_transition": attr.label(
-            default = "//tools/whitelists/function_transition_whitelist",
-        ),
     },
-    cfg = proc_macro_host_transition,
     fragments = ["cpp"],
     host_fragments = ["cpp"],
     toolchains = [
