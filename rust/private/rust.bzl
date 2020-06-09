@@ -14,7 +14,6 @@
 
 load("@io_bazel_rules_rust//rust:private/rustc.bzl", "CrateInfo", "rustc_compile_action")
 load("@io_bazel_rules_rust//rust:private/utils.bzl", "find_toolchain")
-load("@io_bazel_rules_rust//rust:private/transitions.bzl", "proc_macro_host_transition")
 
 _OLD_INLINE_TEST_CRATE_MSG = """
 --------------------------------------------------------------------------------
@@ -130,7 +129,7 @@ def _rust_library_impl(ctx):
             type = ctx.attr.crate_type,
             root = lib_rs,
             srcs = ctx.files.srcs,
-            deps = ctx.attr.deps,
+            deps = ctx.attr.deps + ctx.attr.proc_macro_deps,
             aliases = ctx.attr.aliases,
             output = rust_lib,
             edition = _get_edition(ctx, toolchain),
@@ -158,7 +157,7 @@ def _rust_binary_impl(ctx):
             type = crate_type,
             root = _crate_root_src(ctx, "main.rs"),
             srcs = ctx.files.srcs,
-            deps = ctx.attr.deps,
+            deps = ctx.attr.deps + ctx.attr.proc_macro_deps,
             aliases = ctx.attr.aliases,
             output = output,
             edition = _get_edition(ctx, toolchain),
@@ -185,7 +184,7 @@ def _rust_test_common(ctx, test_binary):
             type = crate.type,
             root = crate.root,
             srcs = crate.srcs + ctx.files.srcs,
-            deps = crate.deps + ctx.attr.deps,
+            deps = crate.deps + ctx.attr.deps + ctx.attr.proc_macro_deps,
             aliases = ctx.attr.aliases,
             output = test_binary,
             edition = crate.edition,
@@ -205,7 +204,7 @@ def _rust_test_common(ctx, test_binary):
             type = "lib",
             root = _crate_root_src(ctx),
             srcs = ctx.files.srcs,
-            deps = ctx.attr.deps,
+            deps = ctx.attr.deps + ctx.attr.proc_macro_deps,
             aliases = ctx.attr.aliases,
             output = test_binary,
             edition = _get_edition(ctx, toolchain),
@@ -297,6 +296,13 @@ _rust_common_attrs = {
             linking a native library.
         """),
     ),
+    "proc_macro_deps": attr.label_list(
+        doc = _tidy("""
+            List of `rust_library` targets with kind `proc-macro` used to help build this library target.
+        """),
+        cfg = "exec",
+        providers = [CrateInfo],
+    ),
     "aliases": attr.label_keyed_string_dict(
         doc = _tidy("""
             Remap crates to a new name or moniker for linkage to this target
@@ -354,9 +360,6 @@ _rust_library_attrs = {
         """),
         default = "rlib",
     ),
-    "_whitelist_function_transition": attr.label(
-        default = "//tools/whitelists/function_transition_whitelist",
-    ),
 }
 
 _rust_test_attrs = {
@@ -377,7 +380,6 @@ rust_library = rule(
                  _rust_library_attrs.items()),
     fragments = ["cpp"],
     host_fragments = ["cpp"],
-    cfg = proc_macro_host_transition,
     toolchains = [
         "@io_bazel_rules_rust//rust:toolchain",
         "@bazel_tools//tools/cpp:toolchain_type",
