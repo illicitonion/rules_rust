@@ -300,6 +300,10 @@ _rust_common_attrs = {
             linking a native library.
         """),
     ),
+    # Previously `proc_macro_deps` were a part of `deps`, and then proc_macro_host_transition was
+    # used into cfg="host" using `@local_config_platform//:host`.
+    # This fails for remote execution, which needs cfg="exec", and there isn't anything like
+    # `@local_config_platform//:exec` exposed.
     "proc_macro_deps": attr.label_list(
         doc = _tidy("""
             List of `rust_library` targets with kind `proc-macro` used to help build this library target.
