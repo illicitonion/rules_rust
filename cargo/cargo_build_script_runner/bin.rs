@@ -69,7 +69,7 @@ fn main() {
             write(&depenvfile, BuildScriptOutput::to_dep_env(&output, &crate_name).as_bytes())
                 .expect(&format!("Unable to write file {:?}", depenvfile));
 
-            let CompileAndLinkFlags { compile_flags, link_flags } = BuildScriptOutput::to_flags(&output);
+            let CompileAndLinkFlags { compile_flags, link_flags } = BuildScriptOutput::to_flags(&output, &exec_root.to_string_lossy());
 
             write(&flagfile, compile_flags.as_bytes())
                 .expect(&format!("Unable to write file {:?}", flagfile));
