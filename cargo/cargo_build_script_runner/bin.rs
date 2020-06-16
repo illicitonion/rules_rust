@@ -16,7 +16,7 @@
 // by rust_library/rust_binary.
 extern crate cargo_build_script_output_parser;
 
-use cargo_build_script_output_parser::BuildScriptOutput;
+use cargo_build_script_output_parser::{BuildScriptOutput, CompileAndLinkFlags};
 use std::env;
 use std::fs::{create_dir_all, write};
 use std::path::Path;
@@ -45,8 +45,8 @@ fn main() {
         }
     });
 
-    match (args.next(), args.next(), args.next(), args.next(), args.next(), args.next()) {
-        (Some(progname), Some(crate_name), Some(out_dir), Some(envfile), Some(flagfile), Some(depenvfile)) => {
+    match (args.next(), args.next(), args.next(), args.next(), args.next(), args.next(), args.next()) {
+        (Some(progname), Some(crate_name), Some(out_dir), Some(envfile), Some(flagfile), Some(linkflags), Some(depenvfile)) => {
             let out_dir_abs = exec_root.join(&out_dir);
             // For some reason Google's RBE does not create the output directory, force create it.
             create_dir_all(&out_dir_abs).expect(&format!("Failed to make output directory: {:?}", out_dir_abs));
@@ -68,11 +68,16 @@ fn main() {
                 .expect(&format!("Unable to write file {:?}", envfile));
             write(&depenvfile, BuildScriptOutput::to_dep_env(&output, &crate_name).as_bytes())
                 .expect(&format!("Unable to write file {:?}", depenvfile));
-            write(&flagfile, BuildScriptOutput::to_flags(&output).as_bytes())
+
+            let CompileAndLinkFlags { compile_flags, link_flags } = BuildScriptOutput::to_flags(&output);
+
+            write(&flagfile, compile_flags.as_bytes())
                 .expect(&format!("Unable to write file {:?}", flagfile));
+            write(&linkflags, link_flags.as_bytes())
+                .expect(&format!("Unable to write file {:?}", linkflags));
         }
         _ => {
-            eprintln!("Usage: $0 progname crate_name out_dir envfile flagfile depenvfile [arg1...argn]");
+            eprintln!("Usage: $0 progname crate_name out_dir envfile flagfile linkflagfile depenvfile [arg1...argn]");
             exit(1);
         }
     }

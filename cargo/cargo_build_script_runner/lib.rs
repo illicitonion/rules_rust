@@ -17,6 +17,12 @@
 use std::io::{BufRead, BufReader, Read};
 use std::process::{Command, Stdio};
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct CompileAndLinkFlags {
+    pub compile_flags: String,
+    pub link_flags: String,
+}
+
 /// Enum containing all the considered return value from the script
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildScriptOutput {
@@ -141,17 +147,23 @@ impl BuildScriptOutput {
     }
 
     /// Convert a vector of [BuildScriptOutput] into a flagfile.
-    pub fn to_flags(v: &Vec<BuildScriptOutput>) -> String {
-        v.iter()
-            .filter_map(|x| match x {
-                BuildScriptOutput::Cfg(e) => Some(format!("--cfg={}", e)),
-                BuildScriptOutput::Flags(e) => Some(e.to_owned()),
-                BuildScriptOutput::LinkLib(e) => Some(format!("-l{}", e)),
-                BuildScriptOutput::LinkSearch(e) => Some(format!("-L{}", e)),
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join(" ")
+    pub fn to_flags(v: &Vec<BuildScriptOutput>) -> CompileAndLinkFlags {
+        let mut compile_flags = Vec::new();
+        let mut link_flags = Vec::new();
+
+        for flag in v {
+            match flag {
+                BuildScriptOutput::Cfg(e) => compile_flags.push(format!("--cfg={}", e)),
+                BuildScriptOutput::Flags(e) => compile_flags.push(e.to_owned()),
+                BuildScriptOutput::LinkLib(e) => link_flags.push(format!("-l{}", e)),
+                BuildScriptOutput::LinkSearch(e) => link_flags.push(format!("-L{}", e)),
+                _ => { },
+            }
+        }
+        CompileAndLinkFlags {
+            compile_flags: compile_flags.join(" "),
+            link_flags: link_flags.join(" "),
+        }
     }
 }
 
@@ -200,7 +212,12 @@ cargo:version_number=1010107f
         );
         assert_eq!(
             BuildScriptOutput::to_flags(&result),
-            "-lsdfsdf -Lbleh -Lblah --cfg=feature=awesome".to_owned()
+            CompileAndLinkFlags {
+                // -Lblah was output as a rustc-flags, so even though it probably _should_ be a link
+                // flag, we don't treat it like one.
+                compile_flags: "-Lblah --cfg=feature=awesome".to_owned(),
+                link_flags: "-lsdfsdf -Lbleh".to_owned(),
+            }
         );
     }
 

@@ -46,6 +46,7 @@ BuildInfo = provider(
         "out_dir": """File: directory containing the result of a build script""",
         "rustc_env": """File: file containing additional environment variables to set for rustc.""",
         "dep_env": """File: extra build script environment varibles to be set to direct dependencies.""",
+        "link_flags": """File: file containing flags to pass to the linker""",
     },
 )
 
