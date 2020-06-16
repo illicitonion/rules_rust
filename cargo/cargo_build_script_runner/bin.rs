@@ -32,13 +32,8 @@ fn main() {
 
     let mut args = env::args().skip(1);
     let manifest_dir_env = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR was not set");
-    let out_dir_env = env::var("OUT_DIR").expect("OUT_DIR was not set");
-    // For some reason RBE does not creat the output directory, force create it
-    create_dir_all(out_dir_env.clone()).expect(&format!("Failed to create OUT_DIR: {}", out_dir_env));
     let rustc_env = env::var("RUSTC").expect("RUSTC was not set");
-    // Because of the Bazel's sandbox, bazel cannot provide full path, convert all relative path to correct path.
     let manifest_dir = exec_root.join(&manifest_dir_env);
-    let out_dir = exec_root.join(&out_dir_env);
     let rustc = exec_root.join(&rustc_env);
 
     let cc = env::var_os("CC").map(|env_var| {
@@ -50,13 +45,17 @@ fn main() {
         }
     });
 
-    match (args.next(), args.next(), args.next(), args.next(), args.next()) {
-        (Some(progname), Some(crate_name), Some(envfile), Some(flagfile), Some(depenvfile)) => {
+    match (args.next(), args.next(), args.next(), args.next(), args.next(), args.next()) {
+        (Some(progname), Some(crate_name), Some(out_dir), Some(envfile), Some(flagfile), Some(depenvfile)) => {
+            let out_dir_abs = exec_root.join(&out_dir);
+            // For some reason Google's RBE does not create the output directory, force create it.
+            create_dir_all(&out_dir_abs).expect(&format!("Failed to make output directory: {:?}", out_dir_abs));
+
             let mut command = Command::new(exec_root.join(&progname));
             command
                 .args(args)
                 .current_dir(manifest_dir.clone())
-                .env("OUT_DIR", out_dir)
+                .env("OUT_DIR", out_dir_abs)
                 .env("CARGO_MANIFEST_DIR", manifest_dir)
                 .env("RUSTC", rustc);
 
@@ -73,7 +72,7 @@ fn main() {
                 .expect(&format!("Unable to write file {:?}", flagfile));
         }
         _ => {
-            eprintln!("Usage: $0 progname crate_name envfile flagfile depenvfile [arg1...argn]");
+            eprintln!("Usage: $0 progname crate_name out_dir envfile flagfile depenvfile [arg1...argn]");
             exit(1);
         }
     }

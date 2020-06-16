@@ -241,10 +241,10 @@ def _add_out_dir_to_compile_inputs(
         file,
         build_info,
         compile_inputs):
-    out_dir = _create_out_dir_action(ctx, file, build_info.out_dir if build_info else None)
-    if out_dir:
-        compile_inputs = depset([out_dir], transitive = [compile_inputs])
-    return compile_inputs, out_dir
+    extra_inputs, prep_commands, dynamic_env = _create_out_dir_action(ctx, file, build_info)
+    if extra_inputs:
+        compile_inputs = depset(extra_inputs, transitive = [compile_inputs])
+    return compile_inputs, prep_commands, dynamic_env
 
 def collect_inputs(
         ctx,
@@ -284,9 +284,9 @@ def construct_arguments(
         toolchain,
         crate_info,
         dep_info,
-        out_dir,
         output_hash,
-        rust_flags):
+        rust_flags,
+        dynamic_env):
     output_dir = getattr(crate_info.output, "dirname") if hasattr(crate_info.output, "dirname") else None
 
     linker_script = getattr(file, "linker_script") if hasattr(file, "linker_script") else None
@@ -354,9 +354,6 @@ def construct_arguments(
     # sysroot being undefined.
     env["SYSROOT"] = ""
 
-    # Env vars which need to be set in the action's command line, rather than on the action's env,
-    # because they rely on other env vars or commands.
-    dynamic_env = {}
     # Certain rust build processes expect to find files from the environment variable
     # `$CARGO_MANIFEST_DIR`. Examples of this include pest, tera, asakuma.
     #
@@ -372,9 +369,6 @@ def construct_arguments(
     package_dir = ctx.build_file_path[:ctx.build_file_path.rfind("/")]
     dynamic_env["CARGO_MANIFEST_DIR"] = "$EXEC_ROOT/{}".format(package_dir)
 
-    if out_dir:
-        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(out_dir.path)
-
     return args, env, dynamic_env
 
 def construct_compile_command(
@@ -383,8 +377,8 @@ def construct_compile_command(
         toolchain,
         crate_info,
         build_info,
+        prep_commands,
         dynamic_env):
-    prep_commands = []
     build_flags = []
     if build_info:
         prep_commands.append("export $(cat %s)" % build_info.rustc_env.path)
@@ -442,14 +436,14 @@ def rustc_compile_action(
         toolchain,
     )
 
-    compile_inputs, out_dir = collect_inputs(
+    compile_inputs, prep_commands, dynamic_env = collect_inputs(
         ctx,
         ctx.file,
         ctx.files,
         toolchain,
         crate_info,
         dep_info,
-        build_info
+        build_info,
     )
 
     args, env, dynamic_env = construct_arguments(
@@ -458,9 +452,9 @@ def rustc_compile_action(
         toolchain,
         crate_info,
         dep_info,
-        out_dir,
         output_hash,
-        rust_flags
+        rust_flags,
+        dynamic_env,
     )
 
     command = construct_compile_command(
@@ -469,6 +463,7 @@ def rustc_compile_action(
         toolchain,
         crate_info,
         build_info,
+        prep_commands,
         dynamic_env,
     )
 
@@ -515,26 +510,30 @@ def add_edition_flags(args, crate):
     if crate.edition != "2015":
         args.add("--edition={}".format(crate.edition))
 
-def _create_out_dir_action(ctx, file, build_info_out_dir = None):
-    tar_file = getattr(file, "out_dir_tar", None)
-    if not tar_file:
-        return build_info_out_dir
-    else:
-        out_dir = ctx.actions.declare_directory(ctx.label.name + ".out_dir")
-        ctx.actions.run_shell(
-            # TODO: Remove system tar usage
-            command = ";".join([
-                "rm -fr {dir} && mkdir {dir} && tar -xzf {tar} -C {dir}".format(tar = tar_file.path, dir = out_dir.path),
-            ] + (
-                ["pushd {dir}; cp -fr {in_dir}; popd".format(dir = out_dir.path, in_dir = build_info_out_dir.path)
-                ] if build_info_out_dir else []
-            )),
-            progress_message = "Creating OUT_DIR = %s" % out_dir.path,
-            inputs = [tar_file] + (build_info_out_dir or []),
-            outputs = [out_dir],
-            use_default_shell_env = True,  # Sets PATH for tar and gzip (tar's dependency)
-        )
-    return out_dir
+def _create_out_dir_action(ctx, file, build_info):
+    tar_file_attr = getattr(file, "out_dir_tar", None)
+    if build_info and tar_file_attr:
+        fail("Target {} has both a build_script dependency and an out_dir_tar - this is not allowed.".format(ctx.label))
+
+    prep_commands = []
+    input_files = []
+    # Env vars which need to be set in the action's command line, rather than on the action's env,
+    # because they rely on other env vars or commands.
+    dynamic_env = {}
+
+    # TODO: Remove system tar usage
+    if build_info:
+        prep_commands.append("export $(cat %s)" % build_info.rustc_env.path)
+        # out_dir will be added as input by the transitive_build_infos loop below.
+        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(build_info.out_dir.path)
+    elif tar_file_attr:
+        out_dir = ".out-dir"
+        prep_commands.append("mkdir -p $OUT_DIR")
+        prep_commands.append("tar -xzf {tar} -C $OUT_DIR".format(tar=tar_file_attr.path))
+        input_files.append(tar_file_attr)
+        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(out_dir)
+
+    return input_files, prep_commands, dynamic_env
 
 def _compute_rpaths(toolchain, output_dir, dep_info):
     """
