@@ -18,8 +18,7 @@ extern crate cargo_build_script_output_parser;
 
 use cargo_build_script_output_parser::BuildScriptOutput;
 use std::env;
-use std::fs::{File, create_dir_all};
-use std::io::Write;
+use std::fs::{create_dir_all, write};
 use std::path::Path;
 use std::process::{exit, Command};
 
@@ -66,18 +65,12 @@ fn main() {
             }
 
             let output = BuildScriptOutput::from_command(&mut command);
-            let mut f =
-                File::create(&envfile).expect(&format!("Unable to create file {}", envfile));
-            f.write_all(BuildScriptOutput::to_env(&output).as_bytes())
-                .expect(&format!("Unable to write file {}", envfile));
-            let mut f =
-                File::create(&depenvfile).expect(&format!("Unable to create file {}", depenvfile));
-            f.write_all(BuildScriptOutput::to_dep_env(&output, &crate_name).as_bytes())
-                .expect(&format!("Unable to write file {}", depenvfile));
-            let mut f =
-                File::create(&flagfile).expect(&format!("Unable to create file {}", flagfile));
-            f.write_all(BuildScriptOutput::to_flags(&output).as_bytes())
-                .expect(&format!("Unable to write file {}", flagfile));
+            write(&envfile, BuildScriptOutput::to_env(&output).as_bytes())
+                .expect(&format!("Unable to write file {:?}", envfile));
+            write(&depenvfile, BuildScriptOutput::to_dep_env(&output, &crate_name).as_bytes())
+                .expect(&format!("Unable to write file {:?}", depenvfile));
+            write(&flagfile, BuildScriptOutput::to_flags(&output).as_bytes())
+                .expect(&format!("Unable to write file {:?}", flagfile));
         }
         _ => {
             eprintln!("Usage: $0 progname crate_name envfile flagfile depenvfile [arg1...argn]");
