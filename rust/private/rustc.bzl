@@ -284,6 +284,7 @@ def construct_arguments(
         toolchain,
         crate_info,
         dep_info,
+        out_dir,
         output_hash,
         rust_flags):
     output_dir = getattr(crate_info.output, "dirname") if hasattr(crate_info.output, "dirname") else None
@@ -349,23 +350,13 @@ def construct_arguments(
     # Update environment with user provided variables.
     env.update(crate_info.rustc_env)
 
-    return args, env
+    # This empty value satisfies Clippy, which otherwise complains about the
+    # sysroot being undefined.
+    env["SYSROOT"] = ""
 
-def _create_command_env(ctx, out_dir):
-    if out_dir:
-        # We awkwardly construct this command because we cannot reference $PWD
-        # from ctx.actions.run(executable=toolchain.rustc)
-        out_dir_env = "OUT_DIR=$(pwd)/{} ".format(out_dir.path)
-    else:
-        out_dir_env = ""
-
-    # Similar awkward construction to prepend execroot to the crate-root to set `CARGO_MANIFEST_DIR`
-    #
-    # See https://github.com/google/cargo-raze/issues/71#issuecomment-433225853 for the rationale as
-    # to why
-    #
-    # In brief:
-    #
+    # Env vars which need to be set in the action's command line, rather than on the action's env,
+    # because they rely on other env vars or commands.
+    dynamic_env = {}
     # Certain rust build processes expect to find files from the environment variable
     # `$CARGO_MANIFEST_DIR`. Examples of this include pest, tera, asakuma.
     #
@@ -379,13 +370,12 @@ def _create_command_env(ctx, out_dir):
     # `exec_root`. Since we cannot (seemingly) get the `exec_root` from skylark, we cheat a little
     # and use `$(pwd)` which resolves the `exec_root` at action execution time.
     package_dir = ctx.build_file_path[:ctx.build_file_path.rfind("/")]
-    manifest_dir_env = "CARGO_MANIFEST_DIR=$(pwd)/{} ".format(package_dir)
+    dynamic_env["CARGO_MANIFEST_DIR"] = "$EXEC_ROOT/{}".format(package_dir)
 
-    # This empty value satisfies Clippy, which otherwise complains about the
-    # sysroot being undefined.
-    sysroot_env= "SYSROOT= "
+    if out_dir:
+        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(out_dir.path)
 
-    return out_dir_env + manifest_dir_env + sysroot_env
+    return args, env, dynamic_env
 
 def construct_compile_command(
         ctx,
@@ -393,10 +383,13 @@ def construct_compile_command(
         toolchain,
         crate_info,
         build_info,
-        out_dir):
-    rustc_env_expansion = ("export $(cat %s);" % build_info.rustc_env.path) if build_info else ""
-    command_env = _create_command_env(ctx, out_dir)
-    build_flags_expansion = (" $(cat '%s')" % build_info.flags.path) if build_info else ""
+        dynamic_env):
+    prep_commands = []
+    build_flags = []
+    if build_info:
+        prep_commands.append("export $(cat %s)" % build_info.rustc_env.path)
+        build_flags.append("$(cat '%s')" % build_info.flags.path)
+
     # Handle that the binary name and crate name may be different.
     #
     # If a target name contains a - then cargo (and rules_rust) will generate a
@@ -416,11 +409,13 @@ def construct_compile_command(
         if src != dst:
             maybe_rename = " && /bin/mv {src} {dst}".format(src=src, dst=dst)
 
-    return '{}{}{} "$@" --remap-path-prefix="$(pwd)"=__bazel_redacted_pwd{}{}'.format(
-        rustc_env_expansion,
-        command_env,
+    # Set $EXEC_ROOT so that actions which chdir still work.
+    # See https://github.com/google/cargo-raze/issues/71#issuecomment-433225853 for the rationale as
+    # to why.
+    return 'export EXEC_ROOT=$(pwd) && {} && {} "$@" --remap-path-prefix="$(pwd)"=__bazel_redacted_pwd {}{}'.format(
+        " && ".join(["export {}={}".format(key, value) for key, value in dynamic_env.items()] + prep_commands),
         command,
-        build_flags_expansion,
+        " ".join(build_flags),
         maybe_rename,
     )
 
@@ -457,12 +452,13 @@ def rustc_compile_action(
         build_info
     )
 
-    args, env = construct_arguments(
+    args, env, dynamic_env = construct_arguments(
         ctx,
         ctx.file,
         toolchain,
         crate_info,
         dep_info,
+        out_dir,
         output_hash,
         rust_flags
     )
@@ -473,7 +469,7 @@ def rustc_compile_action(
         toolchain,
         crate_info,
         build_info,
-        out_dir,
+        dynamic_env,
     )
 
     if hasattr(ctx.attr, "version") and ctx.attr.version != "0.0.0":

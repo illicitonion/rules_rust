@@ -70,12 +70,13 @@ def _clippy_aspect_impl(target, ctx):
         build_info
     )
 
-    args, env = construct_arguments(
+    args, env, dynamic_env = construct_arguments(
         ctx,
         ctx.rule.file,
         toolchain,
         crate_info,
         dep_info,
+        out_dir,
         output_hash = repr(hash(root.path)),
         rust_flags = [])
 
@@ -89,7 +90,7 @@ def _clippy_aspect_impl(target, ctx):
         toolchain,
         crate_info,
         build_info,
-        out_dir,
+        dynamic_env,
     ) + (" && touch %s" % clippy_marker.path)
 
     # Deny the default-on clippy warning levels.
