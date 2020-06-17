@@ -14,5 +14,8 @@ rust_binary(
     name = "cargo_build_script_runner",
     srcs = ["bin.rs"],
     visibility = ["//visibility:public"],
-    deps = [":cargo_build_script_output_parser"],
+    deps = [
+        ":cargo_build_script_output_parser",
+        "//tar_wrapper",
+    ],
 )

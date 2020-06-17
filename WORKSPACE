@@ -32,7 +32,7 @@ new_git_repository(
     name = "libc",
     build_file = "@io_bazel_rules_rust//:libc.BUILD",
     remote = "https://github.com/rust-lang/libc",
-    tag = "0.2.20",
+    tag = "0.2.71",
 )
 
 load("@io_bazel_rules_rust//proto:repositories.bzl", "rust_proto_repositories")
@@ -102,3 +102,6 @@ bazel_version(name = "bazel_version")
 
 load("@examples//hello_sys:workspace.bzl", "remote_deps")
 remote_deps()
+
+load("//tar_wrapper/remote_crates:remote_crates.bzl", "fetch_remote_crates")
+fetch_remote_crates()

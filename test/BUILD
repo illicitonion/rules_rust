@@ -3,6 +3,8 @@ load(
     "rule_test",
 )
 
+exports_files(["example.tar.gz"])
+
 rule_test(
     name = "hello_lib_rule_test",
     generates = ["libhello_lib--1343350674.rlib"],

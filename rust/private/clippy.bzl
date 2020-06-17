@@ -60,7 +60,7 @@ def _clippy_aspect_impl(target, ctx):
         toolchain,
     )
 
-    compile_inputs, prep_commands, dynamic_env, dynamic_build_flags = collect_inputs(
+    compile_inputs, tool_inputs, prep_commands, dynamic_env, dynamic_build_flags = collect_inputs(
         ctx,
         ctx.rule.file,
         ctx.rule.files,
@@ -111,7 +111,7 @@ def _clippy_aspect_impl(target, ctx):
         inputs = compile_inputs,
         outputs = [clippy_marker],
         env = env,
-        tools = [toolchain.clippy_driver],
+        tools = tool_inputs + [toolchain.clippy_driver],
         arguments = [args],
         mnemonic = "Clippy",
     )

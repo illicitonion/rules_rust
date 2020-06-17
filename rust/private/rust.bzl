@@ -360,6 +360,7 @@ _rust_common_attrs = {
         ],
     ),
     "_cc_toolchain": attr.label(default = "@bazel_tools//tools/cpp:current_cc_toolchain"),
+    "untar": attr.label(default = "@io_bazel_rules_rust//tar_wrapper:untar", cfg = "exec", allow_single_file = True, executable = True),
 }
 
 _rust_library_attrs = {

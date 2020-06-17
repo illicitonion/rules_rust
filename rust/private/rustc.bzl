@@ -249,10 +249,10 @@ def _process_build_scripts(
         build_info,
         dep_info,
         compile_inputs):
-    extra_inputs, prep_commands, dynamic_env, dynamic_build_flags = _create_out_dir_action(ctx, file, build_info, dep_info)
+    extra_inputs, tool_inputs, prep_commands, dynamic_env, dynamic_build_flags = _create_out_dir_action(ctx, file, build_info, dep_info)
     if extra_inputs:
         compile_inputs = depset(extra_inputs, transitive = [compile_inputs])
-    return compile_inputs, prep_commands, dynamic_env, dynamic_build_flags
+    return compile_inputs, tool_inputs, prep_commands, dynamic_env, dynamic_build_flags
 
 def collect_inputs(
         ctx,
@@ -441,7 +441,7 @@ def rustc_compile_action(
         toolchain,
     )
 
-    compile_inputs, prep_commands, dynamic_env, dynamic_build_flags = collect_inputs(
+    compile_inputs, tool_inputs, prep_commands, dynamic_env, dynamic_build_flags = collect_inputs(
         ctx,
         ctx.file,
         ctx.files,
@@ -482,6 +482,7 @@ def rustc_compile_action(
     ctx.actions.run_shell(
         command = command,
         inputs = compile_inputs,
+        tools = tool_inputs,
         outputs = [crate_info.output],
         env = env,
         arguments = [args],
@@ -524,12 +525,12 @@ def _create_out_dir_action(ctx, file, build_info, dep_info):
 
     prep_commands = []
     input_files = []
+    tool_inputs = []
     # Env vars and build flags which need to be set in the action's command line, rather than on the action's env,
     # because they rely on other env vars or commands.
     dynamic_env = {}
     dynamic_build_flags = []
 
-    # TODO: Remove system tar usage
     if build_info:
         prep_commands.append("export $(cat %s)" % build_info.rustc_env.path)
         # out_dir will be added as input by the transitive_build_infos loop below.
@@ -538,8 +539,9 @@ def _create_out_dir_action(ctx, file, build_info, dep_info):
     elif tar_file_attr:
         out_dir = ".out-dir"
         prep_commands.append("mkdir -p $OUT_DIR")
-        prep_commands.append("tar -xzf {tar} -C $OUT_DIR".format(tar=tar_file_attr.path))
+        prep_commands.append("{untar} {tar} $OUT_DIR".format(untar = file.untar.path, tar=tar_file_attr.path))
         input_files.append(tar_file_attr)
+        tool_inputs.append(file.untar)
         dynamic_env["OUT_DIR"] = "${{EXEC_ROOT}}/{}".format(out_dir)
 
     # This should probably only actually be exposed to actions which link.
@@ -548,7 +550,7 @@ def _create_out_dir_action(ctx, file, build_info, dep_info):
         dynamic_build_flags.append("$(cat '{}' | sed -e \"s#\${{EXEC_ROOT}}#${{EXEC_ROOT}}#g\")".format(dep_build_info.link_flags.path))
         input_files.append(dep_build_info.link_flags)
 
-    return input_files, prep_commands, dynamic_env, dynamic_build_flags
+    return input_files, tool_inputs, prep_commands, dynamic_env, dynamic_build_flags
 
 def _compute_rpaths(toolchain, output_dir, dep_info):
     """

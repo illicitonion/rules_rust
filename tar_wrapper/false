@@ -1,0 +1,3 @@
+#!/bin/bash -eu
+echo >&2 "Tried to run bogus untar"
+exit 1

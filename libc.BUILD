@@ -4,4 +4,5 @@ rust_library(
     name = "libc",
     srcs = glob(["src/**/*.rs"]),
     visibility = ["//visibility:public"],
+    untar = "@io_bazel_rules_rust//tar_wrapper:false",
 )

@@ -15,6 +15,7 @@
 // A simple wrapper around a build_script execution to generate file to reuse
 // by rust_library/rust_binary.
 extern crate cargo_build_script_output_parser;
+extern crate tar_wrapper;
 
 use cargo_build_script_output_parser::{BuildScriptOutput, CompileAndLinkFlags};
 use std::env;
