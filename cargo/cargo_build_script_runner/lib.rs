@@ -162,7 +162,7 @@ impl BuildScriptOutput {
         }
         CompileAndLinkFlags {
             compile_flags: compile_flags.join(" "),
-            link_flags: link_flags.join(" ").replace(exec_root, "$EXEC_ROOT"),
+            link_flags: link_flags.join(" ").replace(exec_root, "${EXEC_ROOT}"),
         }
     }
 }
@@ -216,7 +216,7 @@ cargo:version_number=1010107f
                 // -Lblah was output as a rustc-flags, so even though it probably _should_ be a link
                 // flag, we don't treat it like one.
                 compile_flags: "-Lblah --cfg=feature=awesome".to_owned(),
-                link_flags: "-lsdfsdf -L$EXEC_ROOT/bleh".to_owned(),
+                link_flags: "-lsdfsdf -L${EXEC_ROOT}/bleh".to_owned(),
             }
         );
     }

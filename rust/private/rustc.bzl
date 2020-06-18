@@ -375,7 +375,7 @@ def construct_arguments(
     # `exec_root`. Since we cannot (seemingly) get the `exec_root` from skylark, we cheat a little
     # and use `$(pwd)` which resolves the `exec_root` at action execution time.
     package_dir = ctx.build_file_path[:ctx.build_file_path.rfind("/")]
-    dynamic_env["CARGO_MANIFEST_DIR"] = "$EXEC_ROOT/{}".format(package_dir)
+    dynamic_env["CARGO_MANIFEST_DIR"] = "${{EXEC_ROOT}}/{}".format(package_dir)
 
     return args, env, dynamic_env
 
@@ -408,7 +408,7 @@ def construct_compile_command(
         if src != dst:
             maybe_rename = " && /bin/mv {src} {dst}".format(src=src, dst=dst)
 
-    # Set $EXEC_ROOT so that actions which chdir still work.
+    # Set ${EXEC_ROOT} so that actions which chdir still work.
     # See https://github.com/google/cargo-raze/issues/71#issuecomment-433225853 for the rationale as
     # to why.
     return 'export EXEC_ROOT=$(pwd) && {} && {} "$@" --remap-path-prefix="$(pwd)"=__bazel_redacted_pwd {}{}'.format(
@@ -533,19 +533,19 @@ def _create_out_dir_action(ctx, file, build_info, dep_info):
     if build_info:
         prep_commands.append("export $(cat %s)" % build_info.rustc_env.path)
         # out_dir will be added as input by the transitive_build_infos loop below.
-        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(build_info.out_dir.path)
+        dynamic_env["OUT_DIR"] = "${{EXEC_ROOT}}/{}".format(build_info.out_dir.path)
         dynamic_build_flags.append("$(cat '%s')" % build_info.flags.path)
     elif tar_file_attr:
         out_dir = ".out-dir"
         prep_commands.append("mkdir -p $OUT_DIR")
         prep_commands.append("tar -xzf {tar} -C $OUT_DIR".format(tar=tar_file_attr.path))
         input_files.append(tar_file_attr)
-        dynamic_env["OUT_DIR"] = "$EXEC_ROOT/{}".format(out_dir)
+        dynamic_env["OUT_DIR"] = "${{EXEC_ROOT}}/{}".format(out_dir)
 
     # This should probably only actually be exposed to actions which link.
     for dep_build_info in dep_info.transitive_build_infos.to_list():
         input_files.append(dep_build_info.out_dir)
-        dynamic_build_flags.append("$(cat '{}' | sed -e \"s#\$EXEC_ROOT#$EXEC_ROOT#g\")".format(dep_build_info.link_flags.path))
+        dynamic_build_flags.append("$(cat '{}' | sed -e \"s#\${{EXEC_ROOT}}#${{EXEC_ROOT}}#g\")".format(dep_build_info.link_flags.path))
         input_files.append(dep_build_info.link_flags)
 
     return input_files, prep_commands, dynamic_env, dynamic_build_flags
