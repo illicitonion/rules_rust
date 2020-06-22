@@ -57,13 +57,24 @@ fn main() {
                 .current_dir(manifest_dir.clone())
                 .env("OUT_DIR", out_dir_abs)
                 .env("CARGO_MANIFEST_DIR", manifest_dir)
-                .env("RUSTC", rustc);
+                .env("RUSTC", rustc)
+                .env("RUST_BACKTRACE", "full");
 
             if let Some(cc) = cc {
                 command.env("CC", cc);
             }
 
-            let output = BuildScriptOutput::from_command(&mut command);
+            let output = BuildScriptOutput::from_command(&mut command).unwrap_or_else(|exit_code| {
+                eprintln!(
+                    "Build script process failed{}",
+                    if let Some(exit_code) = exit_code {
+                        format!(" with exit code {}", exit_code)
+                    } else {
+                        String::new()
+                    });
+                std::process::exit(1)
+            });
+
             write(&envfile, BuildScriptOutput::to_env(&output).as_bytes())
                 .expect(&format!("Unable to write file {:?}", envfile));
             write(&depenvfile, BuildScriptOutput::to_dep_env(&output, &crate_name).as_bytes())
