@@ -20,9 +20,9 @@ use cargo_build_script_output_parser::{BuildScriptOutput, CompileAndLinkFlags};
 use std::env;
 use std::fs::{create_dir_all, write};
 use std::path::Path;
-use std::process::{exit, Command};
+use std::process::Command;
 
-fn main() {
+fn main() -> Result<(), String> {
     // We use exec_root.join rather than std::fs::canonicalize, to avoid resolving symlinks, as
     // some execution strategies and remote execution environments may use symlinks in ways which
     // canonicalizing them may break them, e.g. by having input files be symlinks into a /cas
@@ -64,16 +64,16 @@ fn main() {
                 command.env("CC", cc);
             }
 
-            let output = BuildScriptOutput::from_command(&mut command).unwrap_or_else(|exit_code| {
-                eprintln!(
+            let output = BuildScriptOutput::from_command(&mut command).map_err(|exit_code| {
+                format!(
                     "Build script process failed{}",
                     if let Some(exit_code) = exit_code {
                         format!(" with exit code {}", exit_code)
                     } else {
                         String::new()
-                    });
-                std::process::exit(1)
-            });
+                    }
+                )
+            })?;
 
             write(&envfile, BuildScriptOutput::to_env(&output).as_bytes())
                 .expect(&format!("Unable to write file {:?}", envfile));
@@ -86,10 +86,10 @@ fn main() {
                 .expect(&format!("Unable to write file {:?}", flagfile));
             write(&linkflags, link_flags.as_bytes())
                 .expect(&format!("Unable to write file {:?}", linkflags));
+            Ok(())
         }
         _ => {
-            eprintln!("Usage: $0 progname crate_name out_dir envfile flagfile linkflagfile depenvfile [arg1...argn]");
-            exit(1);
+            Err("Usage: $0 progname crate_name out_dir envfile flagfile linkflagfile depenvfile [arg1...argn]".to_owned())
         }
     }
 }
