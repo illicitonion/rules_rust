@@ -50,14 +50,15 @@ impl BuildScriptOutput {
     fn new(line: &str) -> Option<BuildScriptOutput> {
         let split = line.splitn(2, '=').collect::<Vec<_>>();
         if split.len() <= 1 {
+            // Not a cargo directive.
             print!("{}", line);
             return None;
         }
         let param = split[1].trim().to_owned();
         let key_split = split[0].splitn(2, ':').collect::<Vec<_>>();
         if key_split.len() <= 1 || key_split[0] != "cargo" {
-            print!("{}", line);
             // Not a cargo directive.
+            print!("{}", line);
             return None
         }
         match key_split[1] {
