@@ -1,0 +1,38 @@
+local_repository(
+    name = "rules_rust_external",
+    path = "../..",
+)
+
+load("@rules_rust_external//:repositories.bzl", "rust_external_deps")
+
+rust_external_deps()
+
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+local_repository(
+    name = "io_bazel_rules_rust",
+    path = "../../..",
+)
+
+load("@io_bazel_rules_rust//rust:repositories.bzl", "rust_repositories")
+
+rust_repositories()
+
+load(
+    "@rules_rust_external//:workspace.bzl",
+    "crate",
+    "crate_universe",
+)
+
+crate_universe(
+    name = "rust_deps",
+    cargo_toml_files = ["//:Cargo.toml"],
+    supported_targets = [
+        "x86_64-apple-darwin",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+
+load("@rust_deps//:defs.bzl", "pinned_rust_install")
+
+pinned_rust_install()

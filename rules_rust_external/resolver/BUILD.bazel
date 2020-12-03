@@ -1,0 +1,22 @@
+load(
+    "@io_bazel_rules_rust//rust:rust.bzl",
+    "rust_binary",
+    "rust_library",
+)
+load("@resolver_rust_deps//:defs.bzl", "all_deps", "all_proc_macro_deps")
+
+rust_binary(
+    name = "resolver-bin",
+    srcs = ["src/main.rs"],
+    edition = "2018",
+    deps = all_deps() + [":resolver"],
+)
+
+rust_library(
+    name = "resolver",
+    srcs = glob(["**/*.rs"]),
+    data = glob(["src/templates/**/*.template"]),
+    edition = "2018",
+    proc_macro_deps = all_proc_macro_deps(),
+    deps = all_deps(),
+)

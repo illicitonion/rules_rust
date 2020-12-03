@@ -1,0 +1,21 @@
+load(
+    "@io_bazel_rules_rust//rust:rust.bzl",
+    "rust_binary",
+)
+load("@basic_rust_deps//:defs.bzl", "crate")
+
+rust_binary(
+    name = "basic",
+    srcs = ["src/main.rs"],
+    edition = "2018",
+    deps = [
+        crate("lazy_static"),
+    ],
+)
+
+# Dummy test so that `bazel test //...` exits 0.
+sh_test(
+    name = "test",
+    srcs = ["test.sh"],
+    data = [":basic"],
+)
