@@ -57,11 +57,25 @@ pub enum VersionSpec {
 
 /// Fields in the top-level CargoToml which are ignored.
 /// Only add new fields here if you are certain they cannot affect dependency resolution.
+/// Cargo.toml docs: https://doc.rust-lang.org/cargo/reference/manifest.html
 #[derive(Debug, Deserialize)]
 struct Ignored {
-    bin: serde::de::IgnoredAny,
+    // Target tables
     lib: serde::de::IgnoredAny,
+    bin: serde::de::IgnoredAny,
+    example: serde::de::IgnoredAny,
+    test: serde::de::IgnoredAny,
+    bench: serde::de::IgnoredAny,
+    profile: serde::de::IgnoredAny,
+
+    // Other
     features: serde::de::IgnoredAny,
+    badges: serde::de::IgnoredAny,
+    // Not ignored:
+    // replace: deprecated alternative to patch, use patch instead.
+    // cargo-features: unstable nightly features, evaluate on a case-by-case basis.
+    // workspace: TODO: support cargo workspaces.
+    // target: TODO: support platform-specific dependencies.
 }
 
 pub fn merge_cargo_tomls(
@@ -120,6 +134,7 @@ pub fn merge_cargo_tomls(
                 debug!("Ignoring local path dependency on {:?}", path);
                 continue;
             }
+            all_dep_names.insert(dep.clone());
             if let Some(dep_spec_to_merge) = merged_cargo_toml.build_dependencies.get_mut(&dep) {
                 dep_spec_to_merge
                     .merge(dep_spec)
@@ -135,6 +150,7 @@ pub fn merge_cargo_tomls(
                 debug!("Ignoring local path dependency on {:?}", path);
                 continue;
             }
+            all_dep_names.insert(dep.clone());
             if let Some(dep_spec_to_merge) = merged_cargo_toml.dev_dependencies.get_mut(&dep) {
                 dep_spec_to_merge
                     .merge(dep_spec)

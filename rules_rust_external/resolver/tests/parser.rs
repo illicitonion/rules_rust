@@ -45,10 +45,12 @@ fn parses_one_cargo_toml() {
 
     let want_labels_to_deps = btreemap! {
         "//some:Cargo.toml" => btreeset!{
+            "futures",
             "lazy_static",
             "maplit",
             "serde",
             "structopt",
+            "syn",
         },
     };
 

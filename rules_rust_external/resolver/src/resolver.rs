@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
-use cargo_metadata::{DependencyKind, MetadataCommand};
+use cargo_metadata::{DependencyKind, Metadata, MetadataCommand};
 use cargo_raze::context::CrateContext;
-use cargo_raze::metadata::{CargoMetadataFetcher, CargoWorkspaceFiles};
+use cargo_raze::metadata::RazeMetadataFetcher;
 use cargo_raze::planning::{BuildPlanner, BuildPlannerImpl};
 use cargo_raze::settings::{GenMode, RazeSettings};
 use log::trace;
@@ -16,9 +16,11 @@ use crate::consolidator::{Consolidator, ConsolidatorConfig, ConsolidatorOverride
 use crate::renderer::RenderConfig;
 use crate::NamedTempFile;
 use anyhow::Context;
+use url::Url;
 
 pub struct ResolverConfig {
     pub cargo: PathBuf,
+    pub index_url: Url,
 }
 
 pub struct Resolver {
@@ -37,6 +39,13 @@ pub struct Resolver {
 pub struct ResolvedArtifactsWithMetadata {
     pub resolved_packages: Vec<CrateContext>,
     pub member_packages_version_mapping: HashMap<String, Version>,
+}
+
+#[derive(Debug)]
+pub struct Dependencies {
+    pub normal: BTreeMap<String, Version>,
+    pub build: BTreeMap<String, Version>,
+    pub dev: BTreeMap<String, Version>,
 }
 
 impl Resolver {
@@ -78,9 +87,10 @@ impl Resolver {
                 render_config:
                     RenderConfig {
                         repository_template,
+                        rules_rust_workspace_name,
                     },
                 consolidator_config: ConsolidatorConfig { overrides },
-                resolver_config: ResolverConfig { cargo },
+                resolver_config: ResolverConfig { cargo, index_url },
 
                 // This is what we're computing.
                 digest: _ignored,
@@ -88,10 +98,14 @@ impl Resolver {
                 label_to_crates,
             } = &self;
 
-            hasher.update(repository_template.as_bytes());
+            hasher.update(repository_template.as_str().as_bytes());
+            hasher.update(b"\0");
+            hasher.update(rules_rust_workspace_name.as_bytes());
             hasher.update(b"\0");
 
             hasher.update(get_cargo_version(&cargo)?);
+            hasher.update(b"\0");
+            hasher.update(index_url.as_str().as_bytes());
             hasher.update(b"\0");
             for target_triple in target_triples {
                 hasher.update(target_triple);
@@ -138,13 +152,13 @@ impl Resolver {
                     hasher.update(env_val);
                     hasher.update(b"\0");
                 }
-                for dep_map in vec![
+                for dep_map in &[
                     extra_bazel_deps,
                     extra_bazel_data_deps,
                     extra_build_script_bazel_deps,
                     extra_build_script_bazel_data_deps,
                 ] {
-                    for (target, deps) in dep_map {
+                    for (target, deps) in *dep_map {
                         hasher.update(target);
                         hasher.update(b"\0");
                         for dep in deps {
@@ -192,18 +206,25 @@ impl Resolver {
         let merged_cargo_toml = NamedTempFile::with_str_content("Cargo.toml", &toml_str)
             .context("Writing intermediate Cargo.toml")?;
 
-        let mut md_fetcher = CargoMetadataFetcher::new(&self.resolver_config.cargo, false);
-
-        let cargo_ws_files = CargoWorkspaceFiles {
-            toml_path: PathBuf::from(merged_cargo_toml.path()),
-            lock_path_opt: None,
-        };
-        let mut planner = BuildPlannerImpl::new(&mut md_fetcher);
+        // RazeMetadataFetcher only uses the scheme+host+port of this URL.
+        // If it used the path, we'd run into issues escaping the {s and }s from the template,
+        // but the scheme+host+port should be fine.
+        let repository_template_url = Url::parse(&self.render_config.repository_template)
+            .context("Parsing repository template URL")?;
+        let md_fetcher = RazeMetadataFetcher::new(
+            &self.resolver_config.cargo,
+            repository_template_url,
+            self.resolver_config.index_url.clone(),
+        );
+        let metadata = md_fetcher
+            .fetch_metadata(merged_cargo_toml.path().parent().unwrap(), None, None)
+            .context("Failed fetching metadata")?;
 
         // TODO: These are ?all ignored
         let raze_settings = RazeSettings {
             workspace_path: "".to_string(),
-            incompatible_relative_workspace_path: false,
+            package_aliases_dir: "".to_string(),
+            render_package_aliases: false,
             target: None,
             targets: Some(self.target_triples.clone()),
             crates: HashMap::default(),
@@ -211,13 +232,17 @@ impl Resolver {
             genmode: GenMode::Remote,
             output_buildfile_suffix: "".to_string(),
             default_gen_buildrs: true,
-            registry: "".to_string(),
+            registry: self.render_config.repository_template.clone(),
             binary_deps: HashMap::default(),
-            index_url: String::from("https://github.com/rust-lang/crates.io-index"),
+            index_url: self.resolver_config.index_url.as_str().to_owned(),
+            rust_rules_workspace_name: self.render_config.rules_rust_workspace_name.clone(),
+            vendor_dir: "".to_string(),
+            experimental_api: false,
         };
-        let planned_build = planner
-            .plan_build(&raze_settings, &PathBuf::new(), cargo_ws_files, None)
-            .context("Failed planning build")?;
+
+        let planner = BuildPlannerImpl::new(metadata, raze_settings);
+
+        let planned_build = planner.plan_build(None).context("Failed planning build")?;
 
         let mut resolved_packages = planned_build.crate_contexts;
         resolved_packages
@@ -244,7 +269,7 @@ impl Resolver {
         &self,
         merged_cargo_toml: &Path,
         resolved_artifacts: &[CrateContext],
-    ) -> anyhow::Result<BTreeMap<String, Version>> {
+    ) -> anyhow::Result<Dependencies> {
         let merged_cargo_metadata = MetadataCommand::new()
             .cargo_path(&self.resolver_config.cargo)
             .manifest_path(merged_cargo_toml)
@@ -252,24 +277,40 @@ impl Resolver {
             .exec()
             .context("Failed to run cargo metadata")?;
 
+        Ok(Dependencies {
+            normal: Self::build_version_mapping_for_kind(
+                DependencyKind::Normal,
+                &merged_cargo_metadata,
+                resolved_artifacts,
+            ),
+            build: Self::build_version_mapping_for_kind(
+                DependencyKind::Build,
+                &merged_cargo_metadata,
+                resolved_artifacts,
+            ),
+            dev: Self::build_version_mapping_for_kind(
+                DependencyKind::Development,
+                &merged_cargo_metadata,
+                resolved_artifacts,
+            ),
+        })
+    }
+
+    fn build_version_mapping_for_kind(
+        kind: DependencyKind,
+        merged_cargo_metadata: &Metadata,
+        resolved_artifacts: &[CrateContext],
+    ) -> BTreeMap<String, Version> {
         // Build the intersection of version requirements for all the member (i.e. toplevel) packages
         // of our workspace.
-        let mut member_package_version_reqs: HashMap<String, Vec<VersionReq>> = HashMap::new();
+        let mut member_package_version_reqs: HashMap<String, Vec<VersionReq>> = Default::default();
         for package in &merged_cargo_metadata.packages {
             for dep in &package.dependencies {
-                // TODO: Return a map of dep-kind to crate-name to version,
-                // so that we can create a build_crate and dev_crate function or similar.
-                // Right now we use this result both for the crate() function definition,
-                // and the crates_from function definition, but these should be separate.
-                if dep.kind == DependencyKind::Normal {
-                    let mut cur_version_req = {
-                        let empty_vec = vec![];
-                        member_package_version_reqs
-                            .remove(&dep.name)
-                            .unwrap_or(empty_vec)
-                    };
-                    cur_version_req.push(dep.req.clone());
-                    member_package_version_reqs.insert(dep.name.clone(), cur_version_req);
+                if dep.kind == kind {
+                    member_package_version_reqs
+                        .entry(dep.name.clone())
+                        .or_default()
+                        .push(dep.req.clone());
                 }
             }
         }
@@ -285,17 +326,15 @@ impl Resolver {
                     .all(|req| req.matches(&package.pkg_version))
                 {
                     let current_pkg_version = member_package_version_mapping
-                        .get(&package.pkg_name)
-                        .unwrap_or(&Version::new(0, 0, 0))
-                        .clone();
-                    member_package_version_mapping.insert(
-                        package.pkg_name.clone(),
-                        current_pkg_version.max(package.pkg_version.clone()),
-                    );
+                        .entry(package.pkg_name.clone())
+                        .or_insert_with(|| Version::new(0, 0, 0));
+                    if *current_pkg_version < package.pkg_version {
+                        *current_pkg_version = package.pkg_version.clone();
+                    }
                 }
             }
         }
-        Ok(member_package_version_mapping)
+        member_package_version_mapping
     }
 }
 

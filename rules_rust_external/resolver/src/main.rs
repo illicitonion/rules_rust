@@ -47,40 +47,36 @@ fn main() -> anyhow::Result<()> {
         if lockfile.is_none() {
             eprintln!("Not updating lockfile for `crate_universe` repository with name \"{}\" because it has no `lockfile` attribute.", repo_name);
         }
-    } else {
-        if let Some(lockfile) = lockfile {
-            let mut lockfile_format_version_line = String::new();
-            let mut lockfile_hash_line = String::new();
-            {
-                std::fs::File::open(&lockfile)
-                    .map(BufReader::new)
-                    .and_then(|mut f| {
-                        f.read_line(&mut lockfile_format_version_line)?;
-                        f.read_line(&mut lockfile_hash_line)?;
-                        Ok(())
-                    })
-                    .with_context(|| {
-                        format!("Failed to read lockfile header from {:?}", lockfile)
-                    })?;
-            }
-            if lockfile_format_version_line != "# rules_rust_external file format 1\n" {
-                return Err(anyhow!("Unrecognized lockfile format"));
-            }
-            if let Some(lockfile_hash) = lockfile_hash_line.strip_prefix("# config hash ") {
-                if resolver.digest()? == lockfile_hash.trim() {
-                    std::fs::copy(&lockfile, &output_path).with_context(|| {
-                        format!(
-                            "Failed to copy lockfile from {:?} to {:?}",
-                            lockfile, output_path
-                        )
-                    })?;
-                    return Ok(());
-                } else {
-                    return Err(anyhow!("rules_rust_external: Lockfile at {} is out of date, please either:\n1. Re-run bazel with the environment variable `RULES_RUST_EXTERNAL_UPDATE_LOCKFILE=true`, to update the lockfile\n2. Remove the `lockfile` attribute from the `crate_universe` repository rule with name \"{}\" to use floating dependency versions", lockfile.display(), repo_name));
-                }
+    } else if let Some(lockfile) = lockfile {
+        let mut lockfile_format_version_line = String::new();
+        let mut lockfile_hash_line = String::new();
+        {
+            std::fs::File::open(&lockfile)
+                .map(BufReader::new)
+                .and_then(|mut f| {
+                    f.read_line(&mut lockfile_format_version_line)?;
+                    f.read_line(&mut lockfile_hash_line)?;
+                    Ok(())
+                })
+                .with_context(|| format!("Failed to read lockfile header from {:?}", lockfile))?;
+        }
+        if lockfile_format_version_line != "# rules_rust_external file format 1\n" {
+            return Err(anyhow!("Unrecognized lockfile format"));
+        }
+        if let Some(lockfile_hash) = lockfile_hash_line.strip_prefix("# config hash ") {
+            if resolver.digest()? == lockfile_hash.trim() {
+                std::fs::copy(&lockfile, &output_path).with_context(|| {
+                    format!(
+                        "Failed to copy lockfile from {:?} to {:?}",
+                        lockfile, output_path
+                    )
+                })?;
+                return Ok(());
             } else {
-                return Err(anyhow!("Invalid lockfile"));
+                return Err(anyhow!("rules_rust_external: Lockfile at {} is out of date, please either:\n1. Re-run bazel with the environment variable `RULES_RUST_EXTERNAL_UPDATE_LOCKFILE=true`, to update the lockfile\n2. Remove the `lockfile` attribute from the `crate_universe` repository rule with name \"{}\" to use floating dependency versions", lockfile.display(), repo_name));
             }
+        } else {
+            return Err(anyhow!("Invalid lockfile"));
         }
     }
 

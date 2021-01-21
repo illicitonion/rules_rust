@@ -30,10 +30,12 @@ lazy_static = "=1.4.0"
     let config = Config {
         cargo_toml_files: btreemap! { String::from("//some:Cargo.toml") => cargo_toml_file.path().to_path_buf() },
         overrides: Default::default(),
-        repository: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{name}/{name}-{version}.crate".to_owned(),
+        repository_template: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{crate}/{crate}-{version}.crate".to_owned(),
         target_triples: vec!["x86_64-apple-darwin".to_owned()],
         packages: vec![],
         cargo: PathBuf::from(env!("CARGO")),
+        rust_rules_workspace_name: resolver::config::default_rules_rust_workspace_name(),
+        index_url: resolver::config::default_index_url(),
     };
 
     let want_output = r##"
@@ -106,6 +108,7 @@ rust_library(
 # Unsupported target "no_std" with type "test" omitted
 # Unsupported target "test" with type "test" omitted
 """,
+        sha256 = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646",
         strip_prefix = "lazy_static-1.4.0",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/lazy_static/lazy_static-1.4.0.crate",
@@ -143,14 +146,24 @@ def crates_from(label):
     mapping = {
         "//some:Cargo.toml": [crate("lazy_static")],
     }
+    return mapping[_absolutify(label)]
 
+def dev_crates_from(label):
+    mapping = {
+        "//some:Cargo.toml": [],
+    }
+    return mapping[_absolutify(label)]
+
+def build_crates_from(label):
+    mapping = {
+        "//some:Cargo.toml": [],
+    }
     return mapping[_absolutify(label)]
 
 def proc_macro_crates_from(label):
     mapping = {
         "//some:Cargo.toml": [],
     }
-
     return mapping[_absolutify(label)]
 
 def _absolutify(label):
@@ -275,7 +288,7 @@ path = "src/main.rs"
     let config = Config {
         cargo_toml_files: btreemap! { String::from("//some:Cargo.toml") => cargo_toml_file.path().to_path_buf() },
         overrides,
-        repository: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{name}/{name}-{version}.crate".to_owned(),
+        repository_template: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{crate}/{crate}-{version}.crate".to_owned(),
         target_triples: vec![
             "x86_64-apple-darwin".to_owned(),
             "x86_64-unknown-linux-gnu".to_owned(),
@@ -287,6 +300,8 @@ path = "src/main.rs"
             features: vec![],
         }],
         cargo: PathBuf::from(env!("CARGO")),
+        rust_rules_workspace_name: resolver::config::default_rules_rust_workspace_name(),
+        index_url: resolver::config::default_index_url(),
     };
 
     let want_output = r##"
@@ -421,6 +436,7 @@ rust_library(
     }),
 )
 """,
+        sha256 = "cf1de2fe8c75bc145a2f577add951f8134889b4795d47466a54a5c846d691693",
         strip_prefix = "bitflags-1.2.1",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/bitflags/bitflags-1.2.1.crate",
@@ -504,6 +520,7 @@ rust_library(
 # Unsupported target "test_serde" with type "test" omitted
 # Unsupported target "test_take" with type "test" omitted
 """,
+        sha256 = "0e4cec68f03f32e44924783795810fa50a7035d8c8ebe78580ad7e6c703fba38",
         strip_prefix = "bytes-0.5.6",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/bytes/bytes-0.5.6.crate",
@@ -616,6 +633,7 @@ rust_library(
 # Unsupported target "cxxflags" with type "test" omitted
 # Unsupported target "test" with type "test" omitted
 """,
+        sha256 = "f1770ced377336a88a67c473594ccc14eca6f4559217c34f64aac8f83d641b40",
         strip_prefix = "cc-1.0.62",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/cc/cc-1.0.62.crate",
@@ -708,6 +726,7 @@ rust_library(
 # Unsupported target "no_std" with type "test" omitted
 # Unsupported target "test" with type "test" omitted
 """,
+        sha256 = "e2abad23fbc42b3700f2f279844dc832adb2b2eb069b2df918f455c4e18cc646",
         strip_prefix = "lazy_static-1.4.0",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/lazy_static/lazy_static-1.4.0.crate",
@@ -822,6 +841,7 @@ rust_library(
 )
 # Unsupported target "const_fn" with type "test" omitted
 """,
+        sha256 = "4d58d1b70b004888f764dfbf6a26a3b0342a1632d33968e4a179d8011c760614",
         strip_prefix = "libc-0.2.80",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/libc/libc-0.2.80.crate",
@@ -941,6 +961,7 @@ rust_library(
     }),
 )
 """,
+        sha256 = "602113192b08db8f38796c4e85c39e960c145965140e918018bcde1952429655",
         strip_prefix = "libz-sys-1.1.2",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/libz-sys/libz-sys-1.1.2.crate",
@@ -1011,6 +1032,7 @@ rust_library(
 # Unsupported target "lint" with type "test" omitted
 # Unsupported target "test" with type "test" omitted
 """,
+        sha256 = "282adbf10f2698a7a77f8e983a74b2d18176c19a7fd32a45446139ae7b02b715",
         strip_prefix = "pin-project-lite-0.1.7",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/pin-project-lite/pin-project-lite-0.1.7.crate",
@@ -1079,6 +1101,7 @@ rust_library(
 )
 # Unsupported target "test" with type "test" omitted
 """,
+        sha256 = "3831453b3449ceb48b6d9c7ad7c96d5ea673e9b470a1dc578c2ce6521230884c",
         strip_prefix = "pkg-config-0.3.19",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/pkg-config/pkg-config-0.3.19.crate",
@@ -1274,6 +1297,7 @@ rust_library(
 # Unsupported target "uds_split" with type "test" omitted
 # Unsupported target "uds_stream" with type "test" omitted
 """,
+        sha256 = "5d34ca54d84bf2b5b4d7d31e901a8464f7b60ac145a284fba25ceb801f2ddccd",
         strip_prefix = "tokio-0.2.22",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/tokio/tokio-0.2.22.crate",
@@ -1341,6 +1365,7 @@ rust_library(
     }),
 )
 """,
+        sha256 = "6454029bf181f092ad1b853286f23e2c507d8e8194d01d92da4a55c274a5508c",
         strip_prefix = "vcpkg-0.2.10",
         type = "tar.gz",
         url = "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/vcpkg/vcpkg-0.2.10.crate",
@@ -1396,14 +1421,24 @@ def crates_from(label):
     mapping = {
         "//some:Cargo.toml": [crate("bitflags"), crate("bytes"), crate("cc"), crate("lazy_static"), crate("libc"), crate("libz-sys"), crate("pin-project-lite"), crate("pkg-config"), crate("vcpkg")],
     }
+    return mapping[_absolutify(label)]
 
+def dev_crates_from(label):
+    mapping = {
+        "//some:Cargo.toml": [],
+    }
+    return mapping[_absolutify(label)]
+
+def build_crates_from(label):
+    mapping = {
+        "//some:Cargo.toml": [],
+    }
     return mapping[_absolutify(label)]
 
 def proc_macro_crates_from(label):
     mapping = {
         "//some:Cargo.toml": [],
     }
-
     return mapping[_absolutify(label)]
 
 def _absolutify(label):
@@ -1438,10 +1473,12 @@ plist = "=1.0.0"
     let config = Config {
         cargo_toml_files: btreemap! { String::from("//some:Cargo.toml") => cargo_toml_file.path().to_path_buf() },
         overrides: Default::default(),
-        repository: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{name}/{name}-{version}.crate".to_owned(),
+        repository_template: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{crate}/{crate}-{version}.crate".to_owned(),
         target_triples: vec!["x86_64-apple-darwin".to_owned()],
         packages: vec![],
         cargo: PathBuf::from(env!("CARGO")),
+        rust_rules_workspace_name: resolver::config::default_rules_rust_workspace_name(),
+        index_url: resolver::config::default_index_url(),
     };
 
     let want_output = r#"aliases = select({
@@ -1486,10 +1523,12 @@ prost-types = { git = "https://github.com/danburkert/prost.git", rev = "4ded4a98
     let config = Config {
         cargo_toml_files: btreemap! { String::from("//some:Cargo.toml") => cargo_toml_file.path().to_path_buf() },
         overrides: Default::default(),
-        repository: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{name}/{name}-{version}.crate".to_owned(),
+        repository_template: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{crate}/{crate}-{version}.crate".to_owned(),
         target_triples: vec!["x86_64-apple-darwin".to_owned()],
         packages: vec![],
         cargo: PathBuf::from(env!("CARGO")),
+        rust_rules_workspace_name: resolver::config::default_rules_rust_workspace_name(),
+        index_url: resolver::config::default_index_url(),
     };
 
     let wanted_prost = r###"    new_git_repository(
@@ -1641,14 +1680,14 @@ rust_library(
     deps = [
         ":prost_build_build_script",
         "@__bytes__0_5_6//:bytes",
-        "@__heck__0_3_1//:heck",
+        "@__heck__0_3_2//:heck",
         "@__itertools__0_9_0//:itertools",
-        "@__log__0_4_11//:log",
+        "@__log__0_4_13//:log",
         "@__multimap__0_8_2//:multimap",
         "@__petgraph__0_5_1//:petgraph",
         "@__prost__0_6_1//:prost",
         "@__prost_types__0_6_1//:prost_types",
-        "@__tempfile__3_1_0//:tempfile",
+        "@__tempfile__3_2_0//:tempfile",
     ],
     srcs = glob(["**/*.rs"]),
     crate_root = "src/lib.rs",
@@ -1849,7 +1888,8 @@ rust_library(
         .stdout(predicates::str::contains(unwanted_prost_types).not());
 }
 
-// #[test] // TODO: Unignore when we fix workspace support - currently broken by the fact that we generate our Cargo.toml somewhere standalone but don't strip out the workspace information
+#[test]
+#[ignore] // TODO: Unignore when we fix workspace support - currently broken by the fact that we generate our Cargo.toml somewhere standalone but don't strip out the workspace information
 fn workspace_root() {
     let dir = tempfile::tempdir().expect("Could not make tempdir");
     let subdir = dir.path().join("subcrate");
@@ -1897,10 +1937,12 @@ path = "lib.rs"
     let config = Config {
         cargo_toml_files: btreemap! { String::from("//some/other:Cargo.toml") => workspace_cargo_toml },
         overrides: Default::default(),
-        repository: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{name}/{name}-{version}.crate".to_owned(),
+        repository_template: "https://crates-io.s3-us-west-1.amazonaws.com/crates/crates/{crate}/{crate}-{version}.crate".to_owned(),
         target_triples: vec!["x86_64-apple-darwin".to_owned()],
         packages: vec![],
         cargo: PathBuf::from(env!("CARGO")),
+        rust_rules_workspace_name: resolver::config::default_rules_rust_workspace_name(),
+        index_url: resolver::config::default_index_url(),
     };
 
     test(&config).success().stdout(eq(r#"load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")

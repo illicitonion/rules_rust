@@ -1,15 +1,17 @@
 use cargo_raze::context::{CrateContext, CrateDependencyContext, CrateTargetedDepContext};
 use semver::Version;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs::File;
 use std::io::Write;
 use tera::{self, Context, Tera};
 
 use crate::config;
+use crate::resolver::Dependencies;
 use std::path::Path;
 
 pub struct RenderConfig {
     pub repository_template: String,
+    pub rules_rust_workspace_name: String,
 }
 
 pub struct Renderer {
@@ -17,7 +19,7 @@ pub struct Renderer {
     hash: String,
     internal_renderer: Tera,
     transitive_packages: Vec<CrateContext>,
-    member_packages_version_mapping: BTreeMap<String, Version>,
+    member_packages_version_mapping: Dependencies,
     label_to_crates: BTreeMap<String, BTreeSet<String>>,
 }
 
@@ -143,7 +145,7 @@ impl Renderer {
         config: RenderConfig,
         hash: String,
         transitive_packages: Vec<CrateContext>,
-        member_packages_version_mapping: BTreeMap<String, Version>,
+        member_packages_version_mapping: Dependencies,
         label_to_crates: BTreeMap<String, BTreeSet<String>>,
     ) -> Renderer {
         let mut internal_renderer = Tera::new("src/not/a/dir/*").unwrap();
@@ -317,7 +319,7 @@ def pinned_rust_install():
                     url = self
                         .config
                         .repository_template
-                        .replace("{name}", &package.pkg_name)
+                        .replace("{crate}", &package.pkg_name)
                         .replace("{version}", &package.pkg_version.to_string()),
                     build_file_content = build_files
                         .get(&(package.pkg_name.clone(), package.pkg_version.clone()))
@@ -328,6 +330,7 @@ def pinned_rust_install():
 
         let (proc_macro_crates, default_crates): (Vec<_>, Vec<_>) = self
             .member_packages_version_mapping
+            .normal
             .iter()
             .partition(|(name, version)| {
                 self.transitive_packages
@@ -339,6 +342,11 @@ def pinned_rust_install():
                     .iter()
                     .any(|target| target.kind == "proc-macro")
             });
+
+        let mut crate_repo_names_inner = BTreeMap::new();
+        crate_repo_names_inner.extend(&self.member_packages_version_mapping.normal);
+        crate_repo_names_inner.extend(&self.member_packages_version_mapping.build);
+        crate_repo_names_inner.extend(&self.member_packages_version_mapping.dev);
 
         // Now, create the crate() macro for the user.
         write!(
@@ -373,14 +381,24 @@ def crates_from(label):
     mapping = {{
         {label_to_crates}
     }}
+    return mapping[_absolutify(label)]
 
+def dev_crates_from(label):
+    mapping = {{
+        {label_to_dev_crates}
+    }}
+    return mapping[_absolutify(label)]
+
+def build_crates_from(label):
+    mapping = {{
+        {label_to_build_crates}
+    }}
     return mapping[_absolutify(label)]
 
 def proc_macro_crates_from(label):
     mapping = {{
         {label_to_proc_macro_crates}
     }}
-
     return mapping[_absolutify(label)]
 
 def _absolutify(label):
@@ -390,8 +408,7 @@ def _absolutify(label):
         return "//" + native.package_name() + label
     return "//" + native.package_name() + ":" + label
 "##,
-            crate_repo_names_inner = self
-                .member_packages_version_mapping
+            crate_repo_names_inner = crate_repo_names_inner
                 .iter()
                 .map(|(crate_name, crate_version)| format!(
                     r#"    "{}": "{}",{newline}"#,
@@ -419,37 +436,40 @@ def _absolutify(label):
                 ))
                 .collect::<Vec<String>>()
                 .join(""),
-            label_to_crates = self
-                .label_to_crates
-                .iter()
-                .map(|(label, crates)| {
-                    let values = crates
-                        .into_iter()
-                        .filter(|crate_name| default_crates.iter().any(|(cn, _)| cn == crate_name))
-                        .map(|crate_name| format!(r#"crate("{}")"#, crate_name))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(r#""{label}": [{values}],"#, label = label, values = values)
-                })
-                .collect::<Vec<_>>()
-                .join("\n    "),
-            label_to_proc_macro_crates = self
-                .label_to_crates
-                .iter()
-                .map(|(label, crates)| {
-                    let values = crates
-                        .into_iter()
-                        .filter(|crate_name| {
-                            proc_macro_crates.iter().any(|(cn, _)| cn == crate_name)
-                        })
-                        .map(|crate_name| format!(r#"crate("{}")"#, crate_name))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(r#""{label}": [{values}],"#, label = label, values = values)
-                })
-                .collect::<Vec<_>>()
-                .join("\n    "),
+            label_to_crates =
+                label_to_crates(&default_crates, &self.label_to_crates).join("\n    "),
+            label_to_dev_crates = label_to_crates(
+                &self.member_packages_version_mapping.dev.iter().collect(),
+                &self.label_to_crates,
+            )
+            .join("\n    "),
+            label_to_build_crates = label_to_crates(
+                &self.member_packages_version_mapping.build.iter().collect(),
+                &self.label_to_crates
+            )
+            .join("\n    "),
+            label_to_proc_macro_crates =
+                label_to_crates(&proc_macro_crates, &self.label_to_crates).join("\n    "),
         )?;
         Ok(())
     }
+}
+
+fn label_to_crates(
+    crates: &Vec<(&String, &Version)>,
+    label_to_crates: &BTreeMap<String, BTreeSet<String>>,
+) -> Vec<String> {
+    let crate_names: HashSet<&String> = crates.iter().map(|(name, _)| *name).collect();
+    label_to_crates
+        .iter()
+        .map(|(label, all_crates)| {
+            let values = all_crates
+                .iter()
+                .filter(|crate_name| crate_names.contains(crate_name))
+                .map(|crate_name| format!(r#"crate("{}")"#, crate_name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(r#""{label}": [{values}],"#, label = label, values = values)
+        })
+        .collect::<Vec<_>>()
 }

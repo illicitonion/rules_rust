@@ -1,6 +1,6 @@
 [package]
 name = "resolver"
-version = "0.1.0-alpha15"
+version = "0.2.0"
 authors = [
   "Daniel Wagner-Hall <dwagnerhall@apple.com>",
   "Romain Chossart <romainchossart@gmail.com>",
@@ -11,26 +11,26 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# TODO: we would choose a wider "1" spec but we need to be in sync with cargo-raze.
-anyhow = "^1.0.33"
-# This contains https://github.com/google/cargo-raze/pull/311 which is trivial. Hopefully it will merge soon :)
-cargo-raze = { git = "https://github.com/illicitonion/cargo-raze.git", rev = "5f68b68d1a3c09decd06ef86c9cf18bb134b497f" }
-cargo_metadata = "=0.12.0"  # Needs to match cargo-raze's dep
+# Several of these dependencies need to be compatible with the version cargo-raze is using.
+
+anyhow = "1"
+cargo-raze = "0.9"
+cargo_metadata = "0.12.1"
 cfg-expr = "0.4.1"
 env_logger = "0.7"
 hex = "0.4"
 indoc = "1.0.2"
 itertools = "0.9"
 log = "0.4"
-# TODO: we don't care about the semver version except for the fact that it needs to match the one from cargo-raze.
-semver = { version = "0.11.0", features = ["serde"] }
+semver = { version = "0.11", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.9"
 structopt = "0.3"
 tempfile = "3"
-tera = "1.5"
+tera = "1.6"
 toml = "0.5.6"
+url = { version = "2.2", features = ["serde"] }
 uuid = { version = "0.8", features = ["v4"] }
 libssh2-sys = { version = "0.2.19", features = ["vendored-openssl"] }
 

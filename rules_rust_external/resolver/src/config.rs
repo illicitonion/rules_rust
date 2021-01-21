@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use semver::VersionReq;
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::consolidator::{ConsolidatorConfig, ConsolidatorOverride};
 use crate::parser::merge_cargo_tomls;
@@ -39,15 +40,26 @@ pub struct Override {
 // These fields all end up hashed into the lockfile hash.
 //
 // Anything which doesn't affect the contents of the generated output should live on `Opt` in `main.rs`.
-#[derive(Debug, Default, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
     pub packages: Vec<Package>,
     pub cargo_toml_files: BTreeMap<String, PathBuf>,
     pub overrides: HashMap<String, Override>,
+
+    /// Template of the URL from which to download crates, which are assumed to be gzip'd tar files.
+    /// This string may contain arbitrarily many instances of {crate} and {version} which will be
+    /// replaced by crate names and versions.
+    #[serde(default = "default_repository_template")]
     pub repository_template: String,
+
     pub target_triples: Vec<String>,
     pub cargo: PathBuf,
+
+    #[serde(default = "default_rules_rust_workspace_name")]
+    pub rust_rules_workspace_name: String,
+    #[serde(default = "default_index_url")]
+    pub index_url: Url,
 }
 
 impl Config {
@@ -79,10 +91,14 @@ impl Config {
 
         Ok(Resolver::new(
             toml_contents.into(),
-            ResolverConfig { cargo: self.cargo },
+            ResolverConfig {
+                cargo: self.cargo,
+                index_url: self.index_url,
+            },
             ConsolidatorConfig { overrides },
             RenderConfig {
                 repository_template: self.repository_template.clone(),
+                rules_rust_workspace_name: self.rust_rules_workspace_name.clone(),
             },
             self.target_triples,
             label_to_crates,
@@ -110,4 +126,16 @@ pub fn crate_to_label(crate_name: &str, crate_version: &str) -> String {
         repo_name = crate_to_repo_rule_name(crate_name, crate_version),
         name = crate_name.replace("-", "_")
     )
+}
+
+pub fn default_rules_rust_workspace_name() -> String {
+    String::from("io_bazel_rules_rust")
+}
+
+pub fn default_index_url() -> Url {
+    Url::parse("https://github.com/rust-lang/crates.io-index").expect("Invalid default index URL")
+}
+
+fn default_repository_template() -> String {
+    String::from("https://crates.io/api/v1/crates/{crate}/{version}/download")
 }
