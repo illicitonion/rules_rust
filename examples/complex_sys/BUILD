@@ -14,11 +14,13 @@
 
 load("@io_bazel_rules_rust//rust:rust.bzl", "rust_binary")
 
+load("@complex_sys_deps//:defs.bzl", "all_deps")
+
 package(default_visibility = ["//visibility:public"])
 
 rust_binary(
     name = "complex_sys",
     srcs = ["src/main.rs"],
     edition = "2018",
-    deps = ["//complex_sys/raze:git2"],
+    deps = all_deps(),
 )

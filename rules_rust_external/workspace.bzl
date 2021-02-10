@@ -1,4 +1,4 @@
-DEFAULT_REPOSITORY_TEMPLATE = "https://crates.io/api/v1/crates/{name}/{version}/download"
+DEFAULT_REPOSITORY_TEMPLATE = "https://crates.io/api/v1/crates/{crate}/{version}/download"
 
 def _crate_universe_resolve_impl(repository_ctx):
     """Entry-point repository to manage rust dependencies.

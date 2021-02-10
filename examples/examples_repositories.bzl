@@ -12,6 +12,12 @@ def repositories():
     )
 
     maybe(
+        native.local_repository,
+        name = "rules_rust_external",
+        path = "../rules_rust_external",
+    )
+
+    maybe(
         http_archive,
         name = "build_bazel_rules_nodejs",
         sha256 = "4952ef879704ab4ad6729a29007e7094aef213ea79e9f2e94cbe1c9a753e63ef",

@@ -49,6 +49,11 @@ local_repository(
     path = "examples",
 )
 
+local_repository(
+    name = "rules_rust_external",
+    path = "rules_rust_external",
+)
+
 load("@examples//:examples_repositories.bzl", examples_repositories = "repositories")
 
 examples_repositories()
@@ -60,6 +65,10 @@ examples_deps()
 load("@examples//:examples_transitive_deps.bzl", examples_transitive_deps = "transitive_deps")
 
 examples_transitive_deps(is_top_level = True)
+
+load("@complex_sys_deps//:defs.bzl", "pinned_rust_install")
+
+pinned_rust_install()
 
 # Load all dependencies for docs
 

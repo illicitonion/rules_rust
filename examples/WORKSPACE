@@ -11,3 +11,7 @@ deps()
 load(":examples_transitive_deps.bzl", "transitive_deps")
 
 transitive_deps()
+
+load("@complex_sys_deps//:defs.bzl", "pinned_rust_install")
+
+pinned_rust_install()

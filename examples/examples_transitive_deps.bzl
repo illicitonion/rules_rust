@@ -7,6 +7,10 @@ dependencies. This file contains the required macros to pull these dependencies
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
 
+load("@rules_rust_external//:repositories_bin.bzl", "resolver_bin_deps")
+
+load("@rules_rust_external//:workspace.bzl", "crate", "crate_universe")
+
 # buildifier: disable=unnamed-macro
 def transitive_deps(is_top_level = False):
     """Define transitive dependencies for `rules_rust` examples
@@ -33,3 +37,53 @@ def transitive_deps(is_top_level = False):
             name = "rules_rust_example_cargo_manifest_dir",
             path = "cargo_manifest_dir/external_crate",
         )
+
+    resolver_bin_deps()
+
+    crate_universe(
+        name = "complex_sys_deps",
+        cargo_toml_files = ["@examples//complex_sys:Cargo.toml"],
+        supported_targets = [
+            "x86_64-apple-darwin",
+            "x86_64-unknown-linux-gnu",
+        ],
+        overrides = {
+            "libgit2-sys": crate.override(
+                extra_build_script_env_vars = {
+                    "OPENSSL_DIR": "../openssl/openssl",
+                },
+                extra_bazel_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                extra_build_script_bazel_data_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                features_to_remove = ["vendored"],
+            ),
+            "libssh2-sys": crate.override(
+                extra_build_script_env_vars = {
+                    "OPENSSL_DIR": "../openssl/openssl",
+                },
+                extra_bazel_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                extra_build_script_bazel_data_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                features_to_remove = ["vendored-openssl"],
+            ),
+            "openssl-sys": crate.override(
+                extra_build_script_env_vars = {
+                    "OPENSSL_DIR": "../openssl/openssl",
+                    "OPENSSL_STATIC": "1",
+                },
+                extra_bazel_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                extra_build_script_bazel_data_deps = {
+                    "cfg(all())": ["@openssl//:openssl"],
+                },
+                features_to_remove = ["vendored"],
+            ),
+        },
+    )
