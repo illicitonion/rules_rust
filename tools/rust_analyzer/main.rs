@@ -56,6 +56,7 @@ fn main() -> anyhow::Result<()> {
 
 fn build_rust_project_target(config: &Config) {
     let output = Command::new(&config.bazel)
+        .env("BAZEL_RULES_RUST_FETCH_RUSTC_SRC", "true")
         .current_dir(config.workspace.as_ref().unwrap())
         .arg("build")
         .arg(&config.bazel_analyzer_target)
