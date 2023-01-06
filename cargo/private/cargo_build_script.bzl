@@ -391,7 +391,7 @@ def _cargo_dep_env_implementation(ctx):
         _DepInfo(
             dep_env = ctx.file.src,
             direct_crates = depset(),
-            link_search_path_files = depset(),
+            link_flag_files = depset(),
             transitive_build_infos = depset(direct = build_infos),
             transitive_crate_outputs = depset(),
             transitive_crates = depset(),

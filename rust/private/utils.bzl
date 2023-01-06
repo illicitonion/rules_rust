@@ -708,6 +708,17 @@ def crate_root_src(name, srcs, crate_type):
         fail("No {} source file found.".format(" or ".join(file_names)), "srcs")
     return crate_root
 
+def performs_link(crate_info):
+    """Determines whether the crate type requires linking
+
+    Args:
+        crate_info (CrateInfo): The CrateInfo of the crate being built.
+
+    Returns:
+        bool: Whether the crate type needs linking.
+    """
+    return crate_info.type in ("bin", "cdylib")
+
 def _shortest_src_with_basename(srcs, basename):
     """Finds the shortest among the paths in srcs that match the desired basename.
 

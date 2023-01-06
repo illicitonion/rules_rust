@@ -93,7 +93,7 @@ def _clippy_aspect_impl(target, ctx):
         are_linkstamps_supported = False,
     )
 
-    compile_inputs, out_dir, build_env_files, build_flags_files, linkstamp_outs, ambiguous_libs = collect_inputs(
+    compile_inputs, out_dir, build_env_files, build_flags_files, link_flags_files, linkstamp_outs, ambiguous_libs = collect_inputs(
         ctx,
         ctx.rule.file,
         ctx.rule.files,
@@ -123,6 +123,7 @@ def _clippy_aspect_impl(target, ctx):
         out_dir = out_dir,
         build_env_files = build_env_files,
         build_flags_files = build_flags_files,
+        link_flags_files = link_flags_files,
         emit = ["dep-info", "metadata"],
     )
 

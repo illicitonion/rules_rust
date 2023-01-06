@@ -32,6 +32,7 @@ load(
     "get_preferred_artifact",
     "is_exec_configuration",
     "make_static_lib_symlink",
+    "performs_link",
     "relativize",
 )
 
@@ -205,7 +206,7 @@ def collect_deps(
     transitive_crates = []
     transitive_noncrates = []
     transitive_build_infos = []
-    transitive_link_search_paths = []
+    transitive_link_flag_files = []
     build_info = None
     linkstamps = []
     transitive_crate_outputs = []
@@ -265,7 +266,7 @@ def collect_deps(
 
             if "proc-macro" not in [crate_info.type, crate_info.wrapped_crate_type]:
                 transitive_noncrates.append(dep_info.transitive_noncrates)
-                transitive_link_search_paths.append(dep_info.link_search_path_files)
+                transitive_link_flag_files.append(dep_info.link_flag_files)
 
             transitive_build_infos.append(dep_info.transitive_build_infos)
 
@@ -278,7 +279,7 @@ def collect_deps(
                      "only one is allowed in the dependencies")
             build_info = dep_build_info
             transitive_build_infos.append(depset([build_info]))
-            transitive_link_search_paths.append(depset([build_info.link_search_paths]))
+            transitive_link_flag_files.append(depset([build_info.link_flags, build_info.link_search_paths]))
         else:
             fail("rust targets can only depend on rust_library, rust_*_library or cc_library " +
                  "targets.")
@@ -296,7 +297,7 @@ def collect_deps(
             transitive_crate_outputs = depset(transitive = transitive_crate_outputs),
             transitive_metadata_outputs = depset(transitive = transitive_metadata_outputs),
             transitive_build_infos = depset(transitive = transitive_build_infos),
-            link_search_path_files = depset(transitive = transitive_link_search_paths),
+            link_flag_files = depset(transitive = transitive_link_flag_files),
             dep_env = build_info.dep_env if build_info else None,
         ),
         build_info,
@@ -394,6 +395,7 @@ def get_linker_and_args(ctx, attr, cc_toolchain, feature_configuration, rpaths):
     return ld, link_args, link_env
 
 def _process_build_scripts(
+        crate_info,
         build_info,
         dep_info,
         compile_inputs):
@@ -410,10 +412,13 @@ def _process_build_scripts(
             - (str): The `OUT_DIR` of the current build info
             - (File): An optional path to a generated environment file from a `cargo_build_script` target
             - (depset[File]): All direct and transitive build flags from the current build info.
+            - (depset[File]): Add direct and transitive link-specific flag files from the current build info.
     """
-    extra_inputs, out_dir, build_env_file, build_flags_files = _create_extra_input_args(build_info, dep_info)
+    extra_inputs, out_dir, build_env_file, build_flags_files, link_flags_files = _create_extra_input_args(build_info, dep_info)
     compile_inputs = depset(transitive = [extra_inputs, compile_inputs])
-    return compile_inputs, out_dir, build_env_file, build_flags_files
+    if performs_link(crate_info):
+        compile_inputs = depset(transitive = [compile_inputs, link_flags_files])
+    return compile_inputs, out_dir, build_env_file, build_flags_files, link_flags_files
 
 def _symlink_for_ambiguous_lib(actions, toolchain, crate_info, lib):
     """Constructs a disambiguating symlink for a library dependency.
@@ -649,7 +654,7 @@ def collect_inputs(
 
     # Register linkstamps when linking with rustc (when linking with
     # cc_common.link linkstamps are handled by cc_common.link itself).
-    if not experimental_use_cc_common_link and crate_info.type in ("bin", "cdylib"):
+    if not experimental_use_cc_common_link and performs_link(crate_info):
         # There is no other way to register an action for each member of a depset than
         # flattening the depset as of 2021-10-12. Luckily, usually there is only one linkstamp
         # in a build, and we only flatten the list on binary targets that perform transitive linking,
@@ -690,12 +695,12 @@ def collect_inputs(
     # For backwards compatibility, we also check the value of the `rustc_env_files` attribute when
     # `crate_info.rustc_env_files` is not populated.
     build_env_files = crate_info.rustc_env_files if crate_info.rustc_env_files else getattr(files, "rustc_env_files", [])
-    compile_inputs, out_dir, build_env_file, build_flags_files = _process_build_scripts(build_info, dep_info, compile_inputs)
+    compile_inputs, out_dir, build_env_file, build_flags_files, link_flags_files = _process_build_scripts(crate_info, build_info, dep_info, compile_inputs)
     if build_env_file:
         build_env_files = [f for f in build_env_files] + [build_env_file]
     compile_inputs = depset(build_env_files, transitive = [compile_inputs])
 
-    return compile_inputs, out_dir, build_env_files, build_flags_files, linkstamp_outs, ambiguous_libs
+    return compile_inputs, out_dir, build_env_files, build_flags_files, link_flags_files, linkstamp_outs, ambiguous_libs
 
 def construct_arguments(
         ctx,
@@ -714,6 +719,7 @@ def construct_arguments(
         out_dir,
         build_env_files,
         build_flags_files,
+        link_flags_files,
         emit = ["dep-info", "link"],
         force_all_deps_direct = False,
         force_link = False,
@@ -741,6 +747,7 @@ def construct_arguments(
         out_dir (str): The path to the output directory for the target Crate.
         build_env_files (list): Files containing rustc environment variables, for instance from `cargo_build_script` actions.
         build_flags_files (depset): The output files of a `cargo_build_script` actions containing rustc build flags
+        link_flags_files (depset): The output files of a `cargo_build_script` actions containing rustc link flags
         emit (list): Values for the --emit flag to rustc.
         force_all_deps_direct (bool, optional): Whether to pass the transitive rlibs with --extern
             to the commandline as opposed to -L.
@@ -777,6 +784,8 @@ def construct_arguments(
         process_wrapper_flags.add("--env-file", build_env_file)
 
     process_wrapper_flags.add_all(build_flags_files, before_each = "--arg-file")
+    if performs_link(crate_info):
+        process_wrapper_flags.add_all(link_flags_files, before_each = "--arg-file")
 
     # Certain rust build processes expect to find files from the environment
     # variable `$CARGO_MANIFEST_DIR`. Examples of this include pest, tera,
@@ -1059,7 +1068,7 @@ def rustc_compile_action(
     # Determine if the build is currently running with --stamp
     stamp = is_stamping_enabled(attr)
 
-    compile_inputs, out_dir, build_env_files, build_flags_files, linkstamp_outs, ambiguous_libs = collect_inputs(
+    compile_inputs, out_dir, build_env_files, build_flags_files, link_flags_files, linkstamp_outs, ambiguous_libs = collect_inputs(
         ctx = ctx,
         file = ctx.file,
         files = ctx.files,
@@ -1106,6 +1115,7 @@ def rustc_compile_action(
         out_dir = out_dir,
         build_env_files = build_env_files,
         build_flags_files = build_flags_files,
+        link_flags_files = link_flags_files,
         force_all_deps_direct = force_all_deps_direct,
         stamp = stamp,
         use_json_output = bool(build_metadata),
@@ -1131,6 +1141,7 @@ def rustc_compile_action(
             out_dir = out_dir,
             build_env_files = build_env_files,
             build_flags_files = build_flags_files,
+            link_flags_files = link_flags_files,
             force_all_deps_direct = force_all_deps_direct,
             stamp = stamp,
             use_json_output = True,
@@ -1173,7 +1184,7 @@ def rustc_compile_action(
     # types that benefit from having debug information in a separate file.
     pdb_file = None
     dsym_folder = None
-    if crate_info.type in ("cdylib", "bin"):
+    if performs_link(crate_info):
         if toolchain.os == "windows":
             pdb_file = ctx.actions.declare_file(crate_info.output.basename[:-len(crate_info.output.extension)] + "pdb", sibling = crate_info.output)
             action_outputs.append(pdb_file)
@@ -1468,9 +1479,11 @@ def _create_extra_input_args(build_info, dep_info):
             - (depset[File]): A list of all build info `OUT_DIR` File objects
             - (str): The `OUT_DIR` of the current build info
             - (File): An optional generated environment file from a `cargo_build_script` target
-            - (depset[File]): All direct and transitive build flag files from the current build info.
+            - (depset[File]): All direct and transitive build flag files from the current build info, excluding link-only flags.
+            - (depset[File]): Add direct and transitive link-specific flag files from the current build info.
     """
     input_files = []
+    link_flag_files = []
 
     # Arguments to the commandline line wrapper that are going to be used
     # to create the final command line
@@ -1482,15 +1495,16 @@ def _create_extra_input_args(build_info, dep_info):
         out_dir = build_info.out_dir.path
         build_env_file = build_info.rustc_env
         build_flags_files.append(build_info.flags)
-        build_flags_files.append(build_info.link_flags)
+        link_flag_files.append(build_info.link_flags)
         input_files.append(build_info.out_dir)
-        input_files.append(build_info.link_flags)
+        link_flag_files.append(build_info.link_flags)
 
     return (
-        depset(input_files, transitive = [dep_info.link_search_path_files]),
+        depset(input_files),
         out_dir,
         build_env_file,
-        depset(build_flags_files, transitive = [dep_info.link_search_path_files]),
+        depset(build_flags_files),
+        depset(link_flag_files, transitive = [dep_info.link_flag_files])
     )
 
 def _compute_rpaths(toolchain, output_dir, dep_info, use_pic):
