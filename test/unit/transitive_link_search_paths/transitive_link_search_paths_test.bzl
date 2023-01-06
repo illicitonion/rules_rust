@@ -2,7 +2,8 @@
 
 load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
 load("//cargo:defs.bzl", "cargo_build_script")
-load("//rust:defs.bzl", "rust_common", "rust_library", "rust_proc_macro")
+load("//rust:defs.bzl", "rust_binary", "rust_common", "rust_library", "rust_proc_macro")
+load("//test/unit:common.bzl", "assert_action_mnemonic", "assert_argv_contains", "assert_consecutive_flags", "assert_not_consecutive_flags", "get_action_with_mnemonic")
 
 def _transitive_link_search_paths_test_impl(ctx):
     env = analysistest.begin(ctx)
@@ -16,9 +17,39 @@ def _transitive_link_search_paths_test_impl(ctx):
 
     return analysistest.end(env)
 
+def _binary_flags_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    tut = analysistest.target_under_test(env)
+
+    rustc_action = get_action_with_mnemonic(env, tut, "Rustc")
+    assert_consecutive_flags(env, rustc_action, "--arg-file", second_suffix = "dep_build_script.linksearchpaths")
+    assert_consecutive_flags(env, rustc_action, "--arg-file", second_suffix = "dep_build_script.linkflags")
+
+    return analysistest.end(env)
+
+def _library_flags_test_impl(ctx):
+    env = analysistest.begin(ctx)
+    tut = analysistest.target_under_test(env)
+
+    rustc_action = get_action_with_mnemonic(env, tut, "Rustc")
+    assert_not_consecutive_flags(env, rustc_action, "--arg-file", second_suffix = "dep_build_script.linksearchpaths")
+    assert_not_consecutive_flags(env, rustc_action, "--arg-file", second_suffix = "dep_build_script.linkflags")
+
+    return analysistest.end(env)
+
 transitive_link_search_paths_test = analysistest.make(_transitive_link_search_paths_test_impl)
 
-def _transitive_link_search_paths_test():
+binary_flags_test = analysistest.make(_binary_flags_test_impl)
+
+library_flags_test = analysistest.make(_library_flags_test_impl)
+
+def transitive_link_search_paths_test_suite(name):
+    """Entry-point macro called from the BUILD file.
+
+    Args:
+        name: Name of the macro.
+    """
+
     cargo_build_script(
         name = "proc_macro_build_script",
         srcs = ["proc_macro_build.rs"],
@@ -46,22 +77,33 @@ def _transitive_link_search_paths_test():
         deps = [":dep_build_script"],
     )
 
+    rust_binary(
+        name = "bin",
+        srcs = ["main.rs"],
+        edition = "2018",
+        deps = [":dep"],
+    )
+
     transitive_link_search_paths_test(
         name = "transitive_link_search_paths_test",
         target_under_test = ":dep",
     )
 
-def transitive_link_search_paths_test_suite(name):
-    """Entry-point macro called from the BUILD file.
+    binary_flags_test(
+        name = "binary_flags_test",
+        target_under_test = ":bin",
+    )
 
-    Args:
-        name: Name of the macro.
-    """
-    _transitive_link_search_paths_test()
+    library_flags_test(
+        name = "library_flags_test",
+        target_under_test = ":dep",
+    )
 
     native.test_suite(
         name = name,
         tests = [
+            ":binary_flags_test",
+            ":library_flags_test",
             ":transitive_link_search_paths_test",
         ],
     )

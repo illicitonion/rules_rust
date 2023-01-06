@@ -62,6 +62,48 @@ def assert_action_mnemonic(env, action, mnemonic):
             ),
         )
 
+def assert_consecutive_flags(env, action, first, second_suffix = None):
+    saw_first = False
+    for flag in action.argv:
+        if saw_first:
+            if flag.endswith(second_suffix):
+                return
+        saw_first = flag == first
+    unittest.fail(env, "Expected to see flag {first} followed by flag with suffix {second_suffix}, but got {actual}".format(
+        first = first,
+        second_suffix = second_suffix,
+        actual = action.argv,
+    ))
+
+def assert_not_consecutive_flags(env, action, first, second_suffix = None):
+    saw_first = False
+    for flag in action.argv:
+        if saw_first:
+            if flag.endswith(second_suffix):
+                unittest.fail(env, "Expected not to see flag {first} followed by flag with suffix {second_suffix}, but got {actual}".format(
+                    first = first,
+                    second_suffix = second_suffix,
+                    actual = action.argv,
+                ))
+        saw_first = flag == first
+
+def get_action_with_mnemonic(env, tut, mnemonic):
+    found = None
+    for action in tut.actions:
+        if action.mnemonic == mnemonic:
+            if found != None:
+                unittest.fail(
+                    env,
+                    "Expected exactly one action with mnemonic '{mnemonic}' but saw more than one".format(mnemonic = mnemonic),
+                )
+            found = action
+    if found == None:
+        unittest.fail(
+            env,
+            "Expected exactly one action with mnemonic '{mnemonic}' but saw none".format(mnemonic = mnemonic),
+        )
+    return found
+
 def _startswith(list, prefix):
     if len(list) < len(prefix):
         return False
