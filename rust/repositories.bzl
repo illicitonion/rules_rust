@@ -867,7 +867,10 @@ rust_toolchain_set_repository = repository_rule(
 def _get_toolchain_repositories(name, exec_triple, extra_target_triples, versions, iso_date):
     toolchain_repos = []
 
-    for target_triple in depset([exec_triple] + extra_target_triples).to_list():
+    target_triples = depset(extra_target_triples).to_list()
+    if not target_triples:
+        target_triples = [exec_triple]
+    for target_triple in depset(extra_target_triples).to_list():
         # Parse all provided versions while checking for duplicates
         channels = {}
         for version in versions:
@@ -981,11 +984,11 @@ def rust_repository_set(
     all_toolchain_names = []
     for toolchain in _get_toolchain_repositories(name, exec_triple, extra_target_triples_list, versions, iso_date):
         target_compatible_with = None
-        if toolchain.target_triple == exec_triple:
+        if type(extra_target_triples) == "dict":
+            target_compatible_with = extra_target_triples.get(toolchain.target_triple)
+        elif toolchain.target_triple == exec_triple:
             # The exec triple implicitly gets a toolchain with itself as a target - use default_target_compatible_with for it
             target_compatible_with = default_target_compatible_with
-        elif type(extra_target_triples) == "dict":
-            target_compatible_with = extra_target_triples.get(toolchain.target_triple)
 
         all_toolchain_names.append(rust_toolchain_repository(
             name = toolchain.name,
