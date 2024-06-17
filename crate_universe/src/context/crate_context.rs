@@ -1,8 +1,10 @@
 //! Crate specific information embedded into [crate::context::Context] objects.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
-use cargo_metadata::{Node, Package, PackageId};
+use cargo_metadata::{Package, PackageId};
 use serde::{Deserialize, Serialize};
 
 use crate::config::{AliasRule, CrateId, GenBinaries};
@@ -352,7 +354,7 @@ impl CrateContext {
         include_binaries: bool,
         include_build_scripts: bool,
         sources_are_present: bool,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         let package: &Package = &packages[&annotation.node.id];
         let current_crate_id = CrateId::new(package.name.clone(), package.version.clone());
 
@@ -425,12 +427,12 @@ impl CrateContext {
 
         // Iterate over each target and produce a Bazel target for all supported "kinds"
         let targets = Self::collect_targets(
-            &annotation.node,
+            &annotation.node.id,
             packages,
             gen_binaries,
             include_build_scripts,
             sources_are_present,
-        );
+        )?;
 
         // Parse the library crate name from the set of included targets
         let library_target_name = {
@@ -511,7 +513,7 @@ impl CrateContext {
         };
 
         // Create the crate's context and apply extra settings
-        CrateContext {
+        Ok(CrateContext {
             name: package.name.clone(),
             version: package.version.clone(),
             license: package.license.clone(),
@@ -529,7 +531,7 @@ impl CrateContext {
             alias_rule: None,
             override_targets: BTreeMap::new(),
         }
-        .with_overrides(extras)
+        .with_overrides(extras))
     }
 
     fn with_overrides(mut self, extras: &BTreeMap<CrateId, PairedExtras>) -> Self {
@@ -750,13 +752,13 @@ impl CrateContext {
 
     /// Collect all Bazel targets that should be generated for a particular Package
     fn collect_targets(
-        node: &Node,
+        package_id: &PackageId,
         packages: &BTreeMap<PackageId, Package>,
         gen_binaries: &GenBinaries,
         include_build_scripts: bool,
         sources_are_present: bool,
-    ) -> BTreeSet<Rule> {
-        let package = &packages[&node.id];
+    ) -> anyhow::Result<BTreeSet<Rule>> {
+        let package = &packages[package_id];
 
         let package_root = package
             .manifest_path
@@ -764,10 +766,19 @@ impl CrateContext {
             .parent()
             .expect("Every manifest should have a parent directory");
 
-        package
+        let ungened_binaries = Rc::new(RefCell::new(match gen_binaries {
+            GenBinaries::All => BTreeSet::new(),
+            GenBinaries::Some(bs) => bs.clone(),
+        }));
+
+        let seen_binaries = Rc::new(RefCell::new(BTreeSet::new()));
+
+        let targets = package
             .targets
             .iter()
             .flat_map(|target| {
+                let ungened_binaries = ungened_binaries.clone();
+                let seen_binaries = seen_binaries.clone();
                 target.kind.iter().filter_map(move |kind| {
                     // Unfortunately, The package graph and resolve graph of cargo metadata have different representations
                     // for the crate names (resolve graph sanitizes names to match module names) so to get the rest of this
@@ -814,6 +825,8 @@ impl CrateContext {
                             GenBinaries::Some(set) => set.contains(&target.name),
                         }
                     {
+                        seen_binaries.borrow_mut().insert(target.name.clone());
+                        ungened_binaries.borrow_mut().remove(&target.name);
                         return Some(Rule::Binary(TargetAttributes {
                             crate_name: target.name.clone(),
                             crate_root,
@@ -824,7 +837,27 @@ impl CrateContext {
                     None
                 })
             })
-            .collect()
+            .collect();
+
+        let ungened_binaries = ungened_binaries.borrow();
+        if !ungened_binaries.is_empty() {
+            let seen_binaries = seen_binaries.borrow();
+            use itertools::Itertools;
+            let known = match seen_binaries.len() {
+                0 => "Crate had no binaries.",
+                1 => &format!("Known binary: {}.", seen_binaries.iter().next().unwrap()),
+                _ => &format!("Known binaries: {}.", seen_binaries.iter().join(", ")),
+            };
+            anyhow::bail!(
+                "Annotation for crate {} listed unrecognised value{} in gen_binaries: {}. {}",
+                package.name,
+                if ungened_binaries.len() == 1 { "" } else { "s" },
+                ungened_binaries.iter().join(", "),
+                known,
+            );
+        }
+
+        Ok(targets)
     }
 }
 
@@ -832,6 +865,7 @@ impl CrateContext {
 mod test {
     use super::*;
 
+    use maplit::btreeset;
     use semver::Version;
 
     use crate::config::CrateAnnotations;
@@ -866,7 +900,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "common");
         assert_eq!(
@@ -914,7 +949,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "common");
         assert_eq!(
@@ -979,7 +1015,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "openssl-sys");
         assert!(context.build_script_attrs.is_some());
@@ -1026,7 +1063,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "openssl-sys");
         assert!(context.build_script_attrs.is_none());
@@ -1062,7 +1100,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "sysinfo");
         assert!(context.build_script_attrs.is_none());
@@ -1104,7 +1143,8 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         assert_eq!(context.name, "common");
         check_context(context);
@@ -1236,11 +1276,40 @@ mod test {
             include_binaries,
             include_build_scripts,
             are_sources_present,
-        );
+        )
+        .unwrap();
 
         let mut expected = Select::new();
         expected.insert("unique_feature".to_owned(), None);
 
         assert_eq!(context.common_attrs.crate_features, expected);
+    }
+
+    #[test]
+    fn unrecognised_gen_binaries_entry() {
+        let annotations = common_annotations();
+
+        let packages = annotations.metadata.packages;
+
+        // Grab the first "published" (i.e. non-source) package.
+        let package_id = packages
+            .iter()
+            .filter(|(_, v)| v.source.is_some())
+            .next()
+            .unwrap()
+            .0;
+
+        let include_build_scripts = false;
+        let sources_are_present = false;
+
+        let err = CrateContext::collect_targets(
+            package_id,
+            &packages,
+            &GenBinaries::Some(btreeset!("does_not_exist".to_owned())),
+            include_build_scripts,
+            sources_are_present,
+        )
+        .unwrap_err();
+        assert_eq!(err.to_string(), "Annotation for crate bitflags listed unrecognised value in gen_binaries: does_not_exist. Crate had no binaries.");
     }
 }
